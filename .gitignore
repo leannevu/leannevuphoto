@@ -1,0 +1,7 @@
+.env
+client_secret_*.json
+data/emails.csv
+__pycache__/
+.venv/
+ven/
+*.pyc

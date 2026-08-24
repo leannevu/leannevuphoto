@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Edit selections — Leanne Vu Photo</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=Libre+Caslon+Display&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <header class="nav">
+    <a class="wordmark" href="/">LEANNE VU <span>PHOTO</span></a>
+    <div class="nav-note">CLIENT PROOFING · 2026</div>
+  </header>
+
+  <main>
+    <section class="intro" id="intro">
+      <p class="eyebrow">A simple place to choose</p>
+      <h1>Select the photographs<br>you’d like me to edit.</h1>
+      <p class="lede">Enter the email address connected to your gallery. Your photographs will appear here, ready to review and select.</p>
+      <form id="gallery-form" class="load-form">
+        <label>Email address<input id="email" type="email" required autocomplete="email" placeholder="you@example.com"></label>
+        <button class="button dark" type="submit"><span>Open gallery</span><span aria-hidden="true">↗</span></button>
+      </form>
+      <p class="hint">Use the same email address you provided when your gallery was created.</p>
+      <div id="form-message" class="message" role="status"></div>
+    </section>
+
+    <section id="gallery-section" class="gallery-section" hidden>
+      <div class="gallery-heading">
+        <div><p class="eyebrow">Your proofs</p><h2>Choose your favorites.</h2></div>
+        <p id="gallery-count" class="gallery-count"></p>
+      </div>
+      <div id="gallery" class="gallery"></div>
+    </section>
+  </main>
+
+  <aside id="tray" class="tray" hidden>
+    <button id="tray-toggle" class="tray-summary" type="button" aria-expanded="false">
+      <span><strong id="selected-count">0</strong> selected</span>
+      <span id="selected-preview">View filenames</span>
+    </button>
+    <div id="tray-detail" class="tray-detail">
+      <ol id="selected-list"></ol>
+      <button id="submit-selection" class="button light" type="button">Add to edits <span aria-hidden="true">→</span></button>
+      <div id="submit-message" class="message" role="status"></div>
+    </div>
+  </aside>
+
+  <div id="loader" class="loader" hidden aria-live="polite" aria-busy="true">
+    <div class="loader-inner">
+      <p class="eyebrow">Preparing your gallery</p>
+      <p id="loader-count" class="loader-count">Loading photographs...</p>
+      <div class="progress-track"><div id="progress-bar" class="progress-bar"></div></div>
+    </div>
+  </div>
+
+  <dialog id="lightbox">
+    <button id="lightbox-close" class="lightbox-close" aria-label="Close">×</button>
+    <button id="lightbox-prev" class="lightbox-nav prev" aria-label="Previous image">←</button>
+    <figure>
+      <img id="lightbox-image" alt="">
+      <div class="lightbox-meta">
+        <figcaption id="lightbox-caption"></figcaption>
+        <button id="lightbox-select" class="lightbox-select" type="button" aria-pressed="false">Add to edits <span>+</span></button>
+      </div>
+    </figure>
+    <button id="lightbox-next" class="lightbox-nav next" aria-label="Next image">→</button>
+  </dialog>
+  <script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>
