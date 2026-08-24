@@ -21,3 +21,13 @@ flask --app app run --debug
 Open http://127.0.0.1:5000. The Drive folder must be shared as **Anyone with the link → Viewer**.
 
 Email is sent from the authenticated SMTP account with the client's address in `Reply-To`; mail providers do not allow arbitrary visitors to send as themselves.
+
+## Railway client galleries
+
+Because `data/emails.csv` contains private client information and is excluded from Git, store the production mapping in Railway as a service variable named `CLIENT_GALLERIES_JSON`. Its value must be a JSON object:
+
+```json
+{"client@example.com":"https://drive.google.com/drive/folders/FOLDER_ID"}
+```
+
+Add more clients as additional properties in the same object. When this variable exists, it takes precedence over the local CSV file.

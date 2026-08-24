@@ -1,4 +1,5 @@
 import csv
+import json
 import os
 import re
 import smtplib
@@ -33,6 +34,21 @@ def folder_id_from_url(value: str) -> str | None:
 
 def folder_url_for_email(client_email: str) -> str | None:
     normalized_email = client_email.strip().casefold()
+
+    galleries_json = os.getenv("CLIENT_GALLERIES_JSON", "").strip()
+    if galleries_json:
+        try:
+            galleries = json.loads(galleries_json)
+        except json.JSONDecodeError as exc:
+            raise RuntimeError("CLIENT_GALLERIES_JSON is not valid JSON.") from exc
+        if not isinstance(galleries, dict):
+            raise RuntimeError("CLIENT_GALLERIES_JSON must be a JSON object.")
+        for email, folder_url in galleries.items():
+            if str(email).strip().casefold() == normalized_email:
+                folder_url = str(folder_url).strip()
+                return folder_url if folder_id_from_url(folder_url) else None
+        return None
+
     with EMAILS_CSV.open(newline="", encoding="utf-8-sig") as csv_file:
         for row in csv.reader(csv_file):
             if len(row) < 2:
@@ -51,7 +67,7 @@ def client_folder_or_error(data: dict):
         return None, None, (jsonify(code="INVALID_EMAIL", error="Please enter a valid email address."), 400)
     try:
         folder_url = folder_url_for_email(client_email)
-    except OSError:
+    except (OSError, RuntimeError):
         return None, None, (jsonify(code="CLIENT_LIST_UNAVAILABLE", error="We couldn't check your gallery right now. Please try again shortly."), 503)
     if not folder_url:
         return None, None, (jsonify(code="EMAIL_NOT_FOUND", error="Sorry, that email isn't in our system. Please check the address or contact Leanne for help."), 404)
