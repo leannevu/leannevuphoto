@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Edit selections — Leanne Vu Photo</title>
+  <title>Your photographs — Leanne Vu Photo</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=Libre+Caslon+Display&display=swap" rel="stylesheet">
@@ -18,7 +18,7 @@
   <main>
     <section class="intro" id="intro">
       <p class="eyebrow">A simple place to choose</p>
-      <h1>Select the photographs<br>you’d like me to edit.</h1>
+      <h1>Your photographs,<br>from proof to final.</h1>
       <p class="lede">Enter the email address connected to your gallery. Your photographs will appear here, ready to review and select.</p>
       <form id="gallery-form" class="load-form">
         <label>Email address<input id="email" type="email" required autocomplete="email" placeholder="you@example.com"></label>
@@ -28,10 +28,25 @@
       <div id="form-message" class="message" role="status"></div>
     </section>
 
+    <section id="client-space" class="client-space" hidden>
+      <nav class="flow" aria-label="Your photo process">
+        <div class="flow-step" data-stage="choose_edits"><span>01</span><strong>Choose edits</strong><p>Select the photographs you would like me to edit.</p></div>
+        <span class="flow-line" aria-hidden="true"></span>
+        <div class="flow-step" data-stage="wait_for_edits"><span>02</span><strong>Editing</strong><p>Your selected photographs are being carefully refined.</p></div>
+        <span class="flow-line" aria-hidden="true"></span>
+        <div class="flow-step" data-stage="final_edits"><span>03</span><strong>Final edits</strong><p>Your finished photographs are ready to view and download.</p></div>
+      </nav>
+      <div id="stage-message" class="stage-message" hidden>
+        <p class="eyebrow">Your current stage</p>
+        <h2>Your selections are being edited.</h2>
+        <p>I’ll let you know as soon as your finished photographs are ready here.</p>
+      </div>
+    </section>
+
     <section id="gallery-section" class="gallery-section" hidden>
       <div class="gallery-heading">
-        <div><p class="eyebrow">Your proofs</p><h2>Choose your favorites.</h2></div>
-        <p id="gallery-count" class="gallery-count"></p>
+        <div><p id="gallery-eyebrow" class="eyebrow">Your proofs</p><h2 id="gallery-title">Choose your favorites.</h2></div>
+        <div class="gallery-tools"><p id="gallery-count" class="gallery-count"></p><div id="view-toggle" class="view-toggle" hidden><button class="active" data-view="grid" type="button">Gallery</button><button data-view="list" type="button">List</button></div></div>
       </div>
       <div id="gallery" class="gallery"></div>
     </section>

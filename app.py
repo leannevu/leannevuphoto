@@ -1,3 +1,4 @@
+import ast
 import csv
 import json
 import os
@@ -32,7 +33,32 @@ def folder_id_from_url(value: str) -> str | None:
     return None
 
 
-def folder_url_for_email(client_email: str) -> str | None:
+VALID_STAGES = {"choose_edits", "wait_for_edits", "final_edits"}
+
+
+def normalize_client_access(value) -> dict[str, str]:
+    if isinstance(value, str):
+        raw = value.strip()
+        if raw.startswith("{"):
+            try:
+                value = ast.literal_eval(raw)
+            except (ValueError, SyntaxError):
+                try:
+                    value = json.loads(raw)
+                except json.JSONDecodeError as exc:
+                    raise RuntimeError("A client gallery entry is not a valid dictionary.") from exc
+        else:
+            value = {raw: "choose_edits"}
+    if not isinstance(value, dict):
+        raise RuntimeError("Each client gallery entry must be a dictionary.")
+    return {
+        str(url).strip(): str(stage).strip().lower()
+        for url, stage in value.items()
+        if folder_id_from_url(str(url)) and str(stage).strip().lower() in VALID_STAGES
+    }
+
+
+def access_for_email(client_email: str) -> dict[str, str] | None:
     normalized_email = client_email.strip().casefold()
 
     galleries_json = os.getenv("CLIENT_GALLERIES_JSON", "").strip()
@@ -43,21 +69,49 @@ def folder_url_for_email(client_email: str) -> str | None:
             raise RuntimeError("CLIENT_GALLERIES_JSON is not valid JSON.") from exc
         if not isinstance(galleries, dict):
             raise RuntimeError("CLIENT_GALLERIES_JSON must be a JSON object.")
-        for email, folder_url in galleries.items():
+        for email, access_value in galleries.items():
             if str(email).strip().casefold() == normalized_email:
-                folder_url = str(folder_url).strip()
-                return folder_url if folder_id_from_url(folder_url) else None
+                return normalize_client_access(access_value) or None
         return None
 
     with EMAILS_CSV.open(newline="", encoding="utf-8-sig") as csv_file:
-        for row in csv.reader(csv_file):
-            if len(row) < 2:
+        rows = list(csv.reader(csv_file))
+
+    # Preferred format: one explicit gallery per row. This avoids embedding a
+    # Python dictionary inside a CSV cell and makes the active stage unambiguous.
+    if rows and [cell.strip().casefold() for cell in rows[0]] == [
+        "email",
+        "folder_url",
+        "stage",
+    ]:
+        access = {}
+        for row_number, row in enumerate(rows[1:], start=2):
+            if not row or all(not cell.strip() for cell in row):
                 continue
-            email, folder_url = row[0].strip(), row[1].strip()
-            if email.casefold() in {"email", "email address"}:
+            if len(row) != 3:
+                raise RuntimeError(f"Invalid client gallery row {row_number}.")
+            email, folder_url, stage = (cell.strip() for cell in row)
+            if email.casefold() != normalized_email:
                 continue
-            if email.casefold() == normalized_email and folder_id_from_url(folder_url):
-                return folder_url
+            stage = stage.casefold()
+            if not folder_id_from_url(folder_url) or stage not in VALID_STAGES:
+                raise RuntimeError(f"Invalid client gallery row {row_number}.")
+            if folder_url in access and access[folder_url] != stage:
+                raise RuntimeError(
+                    f"Folder URL on row {row_number} has more than one stage."
+                )
+            access[folder_url] = stage
+        return access or None
+
+    # Backward compatibility for the original email,{URL: stage} format.
+    for row in rows:
+        if len(row) < 2:
+            continue
+        email = row[0].strip()
+        if email.casefold() in {"email", "email address"}:
+            continue
+        if email.casefold() == normalized_email:
+            return normalize_client_access(",".join(row[1:])) or None
     return None
 
 
@@ -66,12 +120,18 @@ def client_folder_or_error(data: dict):
     if not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", client_email):
         return None, None, (jsonify(code="INVALID_EMAIL", error="Please enter a valid email address."), 400)
     try:
-        folder_url = folder_url_for_email(client_email)
+        access = access_for_email(client_email)
     except (OSError, RuntimeError):
         return None, None, (jsonify(code="CLIENT_LIST_UNAVAILABLE", error="We couldn't check your gallery right now. Please try again shortly."), 503)
-    if not folder_url:
+    if not access:
         return None, None, (jsonify(code="EMAIL_NOT_FOUND", error="Sorry, that email isn't in our system. Please check the address or contact Leanne for help."), 404)
-    return client_email, folder_url, None
+    return client_email, access, None
+
+
+def current_stage(access: dict[str, str]) -> tuple[str, str]:
+    priority = {"choose_edits": 0, "wait_for_edits": 1, "final_edits": 2}
+    folder_url, stage = max(access.items(), key=lambda item: priority[item[1]])
+    return stage, folder_url
 
 
 def list_images(folder_id: str) -> list[dict]:
@@ -133,6 +193,7 @@ def list_images(folder_id: str) -> list[dict]:
                     "thumbnail": f"https://drive.google.com/thumbnail?id={item['id']}&sz=w1600",
                     "viewUrl": item.get("webViewLink")
                     or f"https://drive.google.com/file/d/{item['id']}/view",
+                    "downloadUrl": f"https://drive.google.com/uc?export=download&id={item['id']}",
                     "width": metadata.get("width"),
                     "height": metadata.get("height"),
                 }
@@ -184,12 +245,20 @@ def index():
     return render_template("index.html")
 
 
+@app.get("/health")
+def health():
+    return jsonify(status="ok")
+
+
 @app.post("/api/gallery")
 def gallery():
     data = request.get_json(silent=True) or {}
-    _, folder_url, error_response = client_folder_or_error(data)
+    _, access, error_response = client_folder_or_error(data)
     if error_response:
         return error_response
+    stage, folder_url = current_stage(access)
+    if stage == "wait_for_edits":
+        return jsonify(images=[], count=0, stage=stage)
     folder_id = folder_id_from_url(folder_url)
     try:
         images = list_images(folder_id)
@@ -199,15 +268,18 @@ def gallery():
         return jsonify(error="Google Drive did not respond. Please try again."), 502
     if not images:
         return jsonify(error="No images were found in this folder."), 404
-    return jsonify(images=images, count=len(images))
+    return jsonify(images=images, count=len(images), stage=stage)
 
 
 @app.post("/api/submit")
 def submit():
     data = request.get_json(silent=True) or {}
-    client_email, folder_url, error_response = client_folder_or_error(data)
+    client_email, access, error_response = client_folder_or_error(data)
     if error_response:
         return error_response
+    stage, folder_url = current_stage(access)
+    if stage != "choose_edits":
+        return jsonify(error="Edit selections are only available during the choose edits stage."), 409
     files = data.get("files") or []
     if not isinstance(files, list) or not files:
         return jsonify(error="Select at least one image."), 400

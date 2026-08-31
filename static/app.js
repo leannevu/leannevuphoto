@@ -1,8 +1,84 @@
-const state = { images: [], selected: new Map(), lightboxIndex: 0 };
+const state = { images: [], selected: new Map(), lightboxIndex: 0, stage: "choose_edits" };
 const $ = (selector) => document.querySelector(selector);
 const form = $("#gallery-form");
 const gallery = $("#gallery");
 const tray = $("#tray");
+const wait = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
+
+async function animateWorkflow(stage) {
+  const order = {choose_edits: 0, wait_for_edits: 1, final_edits: 2};
+  const steps = [...document.querySelectorAll(".flow-step")];
+  const lines = [...document.querySelectorAll(".flow-line")];
+  const target = order[stage];
+  const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  steps.forEach((step) => step.classList.remove("complete", "current", "touring"));
+  lines.forEach((line) => line.classList.remove("complete", "touring"));
+  $("#client-space").hidden = false;
+  $("#client-space").scrollIntoView({behavior: reducedMotion ? "auto" : "smooth", block: "center"});
+
+  if (!reducedMotion) await wait(250);
+  for (let index = 0; index <= target; index += 1) {
+    if (index > 0) {
+      lines[index - 1].classList.add("touring");
+      if (!reducedMotion) await wait(260);
+      lines[index - 1].classList.remove("touring");
+      lines[index - 1].classList.add("complete");
+    }
+    steps[index].classList.add("touring");
+    if (!reducedMotion) await wait(430);
+    steps[index].classList.remove("touring");
+    steps[index].classList.add(index === target ? "current" : "complete");
+  }
+  if (!reducedMotion) await wait(350);
+}
+
+function preloadImage(url) {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    const timeout = setTimeout(() => reject(new Error("Image load timed out.")), 45000);
+    image.onload = () => {
+      clearTimeout(timeout);
+      resolve();
+    };
+    image.onerror = () => {
+      clearTimeout(timeout);
+      reject(new Error("Image could not be loaded."));
+    };
+    image.decoding = "async";
+    image.src = url;
+  });
+}
+
+async function preloadGallery(images) {
+  if (!images.length) return;
+  let nextIndex = 0;
+  let loaded = 0;
+  const failed = [];
+  const workerCount = Math.min(10, images.length);
+  $("#loader-count").textContent = `Loading photographs 0 / ${images.length}`;
+  $("#progress-bar").style.width = "10%";
+
+  async function worker() {
+    while (nextIndex < images.length) {
+      const index = nextIndex;
+      nextIndex += 1;
+      try {
+        await preloadImage(images[index].thumbnail);
+      } catch (error) {
+        failed.push(images[index].name);
+      }
+      loaded += 1;
+      $("#loader-count").textContent = `Loading photographs ${loaded} / ${images.length}`;
+      $("#progress-bar").style.width = `${10 + (loaded / images.length) * 90}%`;
+    }
+  }
+
+  await Promise.all(Array.from({length: workerCount}, worker));
+  if (failed.length) {
+    throw new Error(`${failed.length} photograph${failed.length === 1 ? "" : "s"} could not load. Please try again.`);
+  }
+}
 
 function message(target, text = "", type = "") {
   target.textContent = text;
@@ -18,6 +94,8 @@ function updateTray() {
     li.textContent = file.name;
     return li;
   }));
+  $("#selected-preview").textContent = state.stage === "final_edits" ? "View download cart" : "View filenames";
+  $("#submit-selection").innerHTML = state.stage === "final_edits" ? "Download selected <span aria-hidden=\"true\">↓</span>" : "Add to edits <span aria-hidden=\"true\">→</span>";
 }
 
 function updateSelectionUI(image) {
@@ -27,14 +105,16 @@ function updateSelectionUI(image) {
     card.classList.toggle("selected", isSelected);
     const button = card.querySelector(".select-button");
     button.textContent = isSelected ? "✓" : "+";
-    button.setAttribute("aria-label", `${isSelected ? "Remove" : "Add"} ${image.name} ${isSelected ? "from" : "to"} edits`);
+    const destination = state.stage === "final_edits" ? "download cart" : "edits";
+    button.setAttribute("aria-label", `${isSelected ? "Remove" : "Add"} ${image.name} ${isSelected ? "from" : "to"} ${destination}`);
     button.setAttribute("aria-pressed", String(isSelected));
   }
   if (state.images[state.lightboxIndex]?.id === image.id) {
     const button = $("#lightbox-select");
     button.classList.toggle("selected", isSelected);
     button.setAttribute("aria-pressed", String(isSelected));
-    button.firstChild.textContent = isSelected ? "Added to edits " : "Add to edits ";
+    const destination = state.stage === "final_edits" ? "download cart" : "edits";
+    button.firstChild.textContent = isSelected ? `Added to ${destination} ` : `Add to ${destination} `;
     button.querySelector("span").textContent = isSelected ? "✓" : "+";
   }
 }
@@ -98,21 +178,49 @@ form.addEventListener("submit", async (event) => {
   message($("#form-message"));
   const button = form.querySelector("button");
   button.disabled = true;
+  document.body.classList.add("gallery-loading");
+  $("#loader").hidden = false;
+  $("#loader-count").textContent = "Finding your place...";
+  $("#progress-bar").style.width = "28%";
   button.firstElementChild.textContent = "Loading…";
   try {
     const response = await fetch("/api/gallery", { method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({email: $("#email").value}) });
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || "Could not load the gallery.");
+    await preloadGallery(data.images);
+    $("#loader-count").textContent = "Your gallery is ready.";
+    $("#progress-bar").style.width = "100%";
+    await wait(180);
+    $("#loader").hidden = true;
+    document.body.classList.remove("gallery-loading");
     state.images = data.images;
+    state.stage = data.stage;
     state.selected.clear();
+    document.body.dataset.stage = data.stage;
+    $("#intro").classList.add("compact");
+    await animateWorkflow(data.stage);
+    if (data.stage === "wait_for_edits") {
+      $("#gallery-section").hidden = true;
+      $("#stage-message").hidden = false;
+      $("#client-space").scrollIntoView({behavior: "smooth"});
+      return;
+    }
+    $("#stage-message").hidden = true;
     renderGallery();
     updateTray();
+    const isFinal = data.stage === "final_edits";
+    $("#gallery-eyebrow").textContent = isFinal ? "Your finished gallery" : "Your proofs";
+    $("#gallery-title").textContent = isFinal ? "Your final photographs." : "Choose your favorites.";
+    $("#view-toggle").hidden = !isFinal;
     $("#gallery-count").textContent = `${data.count} photograph${data.count === 1 ? "" : "s"}`;
     $("#gallery-section").hidden = false;
     $("#gallery-section").scrollIntoView({behavior: "smooth"});
   } catch (error) {
     message($("#form-message"), error.message, "error");
   } finally {
+    $("#loader").hidden = true;
+    $("#progress-bar").style.width = "0";
+    document.body.classList.remove("gallery-loading");
     button.disabled = false;
     button.firstElementChild.textContent = "Open gallery";
   }
@@ -126,6 +234,21 @@ $("#submit-selection").addEventListener("click", async () => {
   const button = $("#submit-selection");
   button.disabled = true;
   message($("#submit-message"));
+  if (state.stage === "final_edits") {
+    [...state.selected.values()].forEach((file, index) => {
+      setTimeout(() => {
+        const link = document.createElement("a");
+        link.href = file.downloadUrl;
+        link.download = file.name;
+        link.target = "_blank";
+        link.rel = "noopener";
+        link.click();
+      }, index * 250);
+    });
+    message($("#submit-message"), "Your downloads have started.", "success");
+    button.disabled = false;
+    return;
+  }
   try {
     const response = await fetch("/api/submit", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({email: $("#email").value, files: [...state.selected.values()]})});
     const data = await response.json();
@@ -137,6 +260,10 @@ $("#submit-selection").addEventListener("click", async () => {
     button.disabled = false;
   }
 });
+document.querySelectorAll("#view-toggle button").forEach((button) => button.addEventListener("click", () => {
+  document.querySelectorAll("#view-toggle button").forEach((item) => item.classList.toggle("active", item === button));
+  gallery.classList.toggle("list-view", button.dataset.view === "list");
+}));
 $("#lightbox-close").addEventListener("click", () => $("#lightbox").close());
 $("#lightbox-prev").addEventListener("click", () => openLightbox(state.lightboxIndex - 1));
 $("#lightbox-next").addEventListener("click", () => openLightbox(state.lightboxIndex + 1));
