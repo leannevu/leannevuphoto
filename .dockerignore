@@ -1,0 +1,13 @@
+.git
+.env
+.test-tools
+.venv
+ven
+__pycache__
+*.pyc
+client_secret_*.json
+data
+check_nordlocker_*.py
+probe_nordlocker_previews.py
+inspect_nordlocker_client.py
+test_*.py

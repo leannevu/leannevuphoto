@@ -37,3 +37,5 @@ dialog figcaption{margin-top:0}
 
 @media(max-width:760px){.intro{justify-content:center}.client-space{padding:18px 10px 46px}.flow{grid-template-columns:auto minmax(9px,1fr) auto minmax(9px,1fr) auto}.flow-step{width:clamp(88px,27vw,108px);padding:9px;gap:3px}.flow-step strong{font-size:clamp(14px,4.2vw,18px)}.flow-step span{font-size:6px}.flow-step p{font-size:7px;line-height:1.2}.flow-line{height:6px}.lightbox-meta{gap:12px}.lightbox-select{padding:9px;font-size:11px}.lightbox-nav{display:none}dialog figure{padding:55px 14px 24px}dialog img{max-height:calc(100vh - 125px)}}
 @media(prefers-reduced-motion:reduce){.flow-step.touring,.flow-line.touring{animation:none}.flow-step,.flow-line{transition:none}}
+.photo-retry{display:none;position:absolute;left:12px;bottom:12px;right:12px;padding:12px;border:0;background:#fff;color:#222;cursor:pointer}.photo.load-error .photo-retry{display:block}
+@media(max-width:760px){.load-form{grid-template-columns:minmax(0,1fr)}.load-form .button{width:100%}.gallery-heading{flex-wrap:wrap;gap:20px}}

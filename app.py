@@ -1,5 +1,7 @@
 import ast
 import csv
+import hashlib
+import io
 import json
 import os
 import re
@@ -7,15 +9,19 @@ import smtplib
 import ssl
 from email.message import EmailMessage
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import requests
 from dotenv import load_dotenv
-from flask import Flask, jsonify, render_template, request
+from flask import Flask, jsonify, render_template, request, send_file, url_for
+from itsdangerous import BadSignature, URLSafeTimedSerializer
+from nordlocker import bridge, NordLockerError
 
 load_dotenv()
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 1 * 1024 * 1024
+photo_tokens = URLSafeTimedSerializer(os.getenv('SECRET_KEY') or os.urandom(32), salt='nordlocker-photos')
 
 FOLDER_PATTERNS = (
     r"/folders/([a-zA-Z0-9_-]+)",
@@ -36,7 +42,55 @@ def folder_id_from_url(value: str) -> str | None:
 VALID_STAGES = {"choose_edits", "wait_for_edits", "final_edits"}
 
 
-def normalize_client_access(value) -> dict[str, str]:
+def is_nordlocker_share(value: str) -> bool:
+    try:
+        parsed = urlsplit(value.strip())
+    except ValueError:
+        return False
+    return (
+        parsed.scheme == "https"
+        and parsed.netloc == "cloud.nordlocker.com"
+        and re.fullmatch(r"/shares/unlock/[a-fA-F0-9-]{36}", parsed.path) is not None
+        and re.fullmatch(r"[A-Za-z0-9_-]{43}", parsed.fragment) is not None
+    )
+
+
+def valid_gallery_url(value: str) -> bool:
+    return is_nordlocker_share(value) or bool(folder_id_from_url(value))
+
+
+class GalleryConfigurationError(RuntimeError):
+    pass
+
+
+def gallery_config(folder_url, value):
+    """Normalize old stage-only entries and explicit stage/process entries."""
+    if isinstance(value, dict):
+        stage = str(value.get('stage', '')).strip().casefold()
+        process = str(value.get('process', '')).strip().casefold()
+    else:
+        stage = str(value).strip().casefold()
+        process = 'nord' if is_nordlocker_share(folder_url) else 'google'
+    if stage not in VALID_STAGES:
+        raise GalleryConfigurationError('This gallery has an invalid stage. Please contact Leanne.')
+    if process not in {'google', 'nord'}:
+        raise GalleryConfigurationError("The gallery process must be 'google' or 'nord'. Please contact Leanne.")
+    try:
+        parsed = urlsplit(folder_url)
+        google_url = parsed.scheme == 'https' and parsed.netloc == 'drive.google.com' and bool(folder_id_from_url(folder_url))
+    except ValueError:
+        google_url = False
+    matches = google_url if process == 'google' else is_nordlocker_share(folder_url)
+    if not matches:
+        raise GalleryConfigurationError('The gallery link does not match its configured process (google or nord). Please contact Leanne.')
+    return {'stage': stage, 'process': process}
+
+
+def gallery_process(access, folder_url):
+    return gallery_config(folder_url, access[folder_url])['process']
+
+
+def normalize_client_access(value) -> dict:
     if isinstance(value, str):
         raw = value.strip()
         if raw.startswith("{"):
@@ -51,14 +105,11 @@ def normalize_client_access(value) -> dict[str, str]:
             value = {raw: "choose_edits"}
     if not isinstance(value, dict):
         raise RuntimeError("Each client gallery entry must be a dictionary.")
-    return {
-        str(url).strip(): str(stage).strip().lower()
-        for url, stage in value.items()
-        if folder_id_from_url(str(url)) and str(stage).strip().lower() in VALID_STAGES
-    }
+    return {str(url).strip(): gallery_config(str(url).strip(), config)
+            for url, config in value.items()}
 
 
-def access_for_email(client_email: str) -> dict[str, str] | None:
+def access_for_email(client_email: str) -> dict | None:
     normalized_email = client_email.strip().casefold()
 
     galleries_json = os.getenv("CLIENT_GALLERIES_JSON", "").strip()
@@ -79,28 +130,25 @@ def access_for_email(client_email: str) -> dict[str, str] | None:
 
     # Preferred format: one explicit gallery per row. This avoids embedding a
     # Python dictionary inside a CSV cell and makes the active stage unambiguous.
-    if rows and [cell.strip().casefold() for cell in rows[0]] == [
-        "email",
-        "folder_url",
-        "stage",
-    ]:
+    header = [cell.strip().casefold() for cell in rows[0]] if rows else []
+    if header in (["email", "folder_url", "stage"], ["email", "folder_url", "stage", "process"]):
         access = {}
         for row_number, row in enumerate(rows[1:], start=2):
             if not row or all(not cell.strip() for cell in row):
                 continue
-            if len(row) != 3:
-                raise RuntimeError(f"Invalid client gallery row {row_number}.")
-            email, folder_url, stage = (cell.strip() for cell in row)
+            if row[0].strip().casefold() != normalized_email:
+                continue
+            if len(row) != len(header):
+                raise GalleryConfigurationError(f"The gallery configuration on row {row_number} has missing or extra columns. Please contact Leanne.")
+            email, folder_url, stage = (cell.strip() for cell in row[:3])
             if email.casefold() != normalized_email:
                 continue
-            stage = stage.casefold()
-            if not folder_id_from_url(folder_url) or stage not in VALID_STAGES:
-                raise RuntimeError(f"Invalid client gallery row {row_number}.")
-            if folder_url in access and access[folder_url] != stage:
+            config = gallery_config(folder_url, {'stage':stage, 'process':row[3]} if len(header) == 4 else stage)
+            if folder_url in access and access[folder_url] != config:
                 raise RuntimeError(
                     f"Folder URL on row {row_number} has more than one stage."
                 )
-            access[folder_url] = stage
+            access[folder_url] = config
         return access or None
 
     # Backward compatibility for the original email,{URL: stage} format.
@@ -121,6 +169,8 @@ def client_folder_or_error(data: dict):
         return None, None, (jsonify(code="INVALID_EMAIL", error="Please enter a valid email address."), 400)
     try:
         access = access_for_email(client_email)
+    except GalleryConfigurationError as exc:
+        return None, None, (jsonify(code='GALLERY_CONFIG_ERROR', error=str(exc)), 503)
     except (OSError, RuntimeError):
         return None, None, (jsonify(code="CLIENT_LIST_UNAVAILABLE", error="We couldn't check your gallery right now. Please try again shortly."), 503)
     if not access:
@@ -128,10 +178,10 @@ def client_folder_or_error(data: dict):
     return client_email, access, None
 
 
-def current_stage(access: dict[str, str]) -> tuple[str, str]:
+def current_stage(access: dict) -> tuple[str, str]:
     priority = {"choose_edits": 0, "wait_for_edits": 1, "final_edits": 2}
-    folder_url, stage = max(access.items(), key=lambda item: priority[item[1]])
-    return stage, folder_url
+    folder_url, config = max(access.items(), key=lambda item: priority[item[1]['stage'] if isinstance(item[1], dict) else item[1]])
+    return config['stage'] if isinstance(config, dict) else config, folder_url
 
 
 def list_images(folder_id: str) -> list[dict]:
@@ -250,15 +300,62 @@ def health():
     return jsonify(status="ok")
 
 
+def share_fingerprint(url):
+    return hashlib.sha256(url.encode()).hexdigest()
+
+
+@app.get('/api/nordlocker/photos/<token>')
+def nordlocker_photo(token):
+    try:
+        email, fingerprint, file_id = photo_tokens.loads(token, max_age=86400)
+        access = access_for_email(email)
+        if not access:
+            raise ValueError()
+        stage, folder_url = current_stage(access)
+        if gallery_process(access, folder_url) != 'nord' or share_fingerprint(folder_url) != fingerprint or stage == 'wait_for_edits':
+            raise ValueError()
+        kind = request.args.get('kind', 'thumbnail')
+        if kind not in {'thumbnail', 'preview', 'original'}:
+            raise ValueError()
+        if kind == 'original' and stage != 'final_edits':
+            return jsonify(error='Original downloads are available when your final edits are ready.'), 409
+    except (BadSignature, ValueError, TypeError, OSError, RuntimeError):
+        return jsonify(error='This photo link is unavailable. Please reopen your gallery.'), 404
+    try:
+        content, mime_type, name = bridge.photo(folder_url, file_id, kind)
+    except NordLockerError as exc:
+        return jsonify(error=str(exc)), 502
+    response = send_file(io.BytesIO(content), mimetype=mime_type,
+                         as_attachment=kind == 'original', download_name=name)
+    response.headers['Cache-Control'] = 'private, no-store'
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    return response
+
+
 @app.post("/api/gallery")
 def gallery():
     data = request.get_json(silent=True) or {}
-    _, access, error_response = client_folder_or_error(data)
+    client_email, access, error_response = client_folder_or_error(data)
     if error_response:
         return error_response
     stage, folder_url = current_stage(access)
     if stage == "wait_for_edits":
         return jsonify(images=[], count=0, stage=stage)
+    if gallery_process(access, folder_url) == 'nord':
+        try:
+            files = bridge.list_images(folder_url)
+        except NordLockerError as exc:
+            return jsonify(error=str(exc)), 502
+        images = []
+        for item in files:
+            token = photo_tokens.dumps([client_email, share_fingerprint(folder_url), item['id']])
+            images.append(dict(id=item['id'], name=item['name'],
+                               thumbnail=url_for('nordlocker_photo', token=token),
+                               previewUrl=url_for('nordlocker_photo', token=token, kind='preview'),
+                               downloadUrl=url_for('nordlocker_photo', token=token, kind='original')))
+        if not images:
+            return jsonify(error='No supported photos were found in this folder.'), 404
+        return jsonify(images=images, count=len(images), stage=stage, source='nordlocker', lazy=True)
     folder_id = folder_id_from_url(folder_url)
     try:
         images = list_images(folder_id)
@@ -286,7 +383,20 @@ def submit():
     if len(files) > 1000:
         return jsonify(error="Too many files selected."), 400
     clean_files = []
+    available = None
+    if gallery_process(access, folder_url) == 'nord':
+        try:
+            available = {item['id']: item for item in bridge.list_images(folder_url)}
+        except NordLockerError as exc:
+            return jsonify(error=str(exc)), 502
     for item in files:
+        if available is not None:
+            if not isinstance(item, dict) or str(item.get('id', '')) not in available:
+                return jsonify(error='Select valid photos from your gallery.'), 400
+            actual = available[str(item['id'])]
+            if not any(selected['id'] == actual['id'] for selected in clean_files):
+                clean_files.append(dict(id=actual['id'], name=actual['name'], viewUrl=folder_url))
+            continue
         if not isinstance(item, dict):
             continue
         file_id = re.sub(r"[^a-zA-Z0-9_-]", "", str(item.get("id", "")))
