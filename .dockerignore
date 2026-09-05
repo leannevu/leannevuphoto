@@ -8,6 +8,7 @@ __pycache__
 client_secret_*.json
 data
 check_nordlocker_*.py
+check_google_*.py
 probe_nordlocker_previews.py
 inspect_nordlocker_client.py
 test_*.py
