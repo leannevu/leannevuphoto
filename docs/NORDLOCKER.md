@@ -1,8 +1,23 @@
+> Runtime integration: `services/nordlocker/`. Historical diagnostics are kept locally in `.local/archive/` and excluded from deployment.
+
 # Public NordLocker on-demand integration
 
 Tested September 4, 2026 using the public share configured in data/emails.csv.
 
 ## Implemented result
+
+Quality/speed update: the bridge batches eight stored thumbnails at a time and
+keeps up to 64 in each browser session. Full previews now return original bytes
+without the earlier 1800-pixel resize/recompression. The lightbox reuses the
+already-loaded image element to avoid requesting a full photo twice.
+
+Local live measurements after the update (not Railway performance guarantees):
+
+- Initial metadata/session setup for 173 photos: 9.6 seconds.
+- First thumbnail batch: 1.35 seconds, eight small storage transfers.
+- Adjacent thumbnail: 0.02 seconds, no additional storage transfer.
+- First full-quality view: 2.3 seconds, 6,217,125 bytes matching the source file size.
+- Repeated server-side full-quality view: 0.01 seconds, no additional storage transfer.
 
 The app now lists all 173 photos through NordLocker's browser client and decrypts
 individual files or stored thumbnails in memory. The successful Flask test returned
@@ -14,7 +29,7 @@ The bridge calls the client's node listing, thumbnail, and file-decryption servi
 directly inside an isolated public-share session. It does not open the native
 preview viewer, prefetch neighboring originals, or click Download all. The grid
 loads at most three thumbnail requests concurrently as cards enter the viewport.
-Originals are fetched only for larger previews, final downloads, or a missing
+Originals are fetched only for full-quality views, final downloads, or a missing
 thumbnail fallback. No archive or photo files are saved to the project.
 
 ## Earlier viewer-only investigation

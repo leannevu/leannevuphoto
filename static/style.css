@@ -39,3 +39,71 @@ dialog figcaption{margin-top:0}
 @media(prefers-reduced-motion:reduce){.flow-step.touring,.flow-line.touring{animation:none}.flow-step,.flow-line{transition:none}}
 .photo-retry{display:none;position:absolute;left:12px;bottom:12px;right:12px;padding:12px;border:0;background:#fff;color:#222;cursor:pointer}.photo.load-error .photo-retry{display:block}
 @media(max-width:760px){.load-form{grid-template-columns:minmax(0,1fr)}.load-form .button{width:100%}.gallery-heading{flex-wrap:wrap;gap:20px}}
+/* Named gallery chooser and personal welcome */
+.gallery-picker{padding:25px clamp(24px,5vw,76px) 90px;text-align:center}
+.gallery-picker h2,.gallery-welcome h2{font:400 clamp(40px,6vw,70px)/1.1 var(--serif);margin:0;overflow-wrap:anywhere}
+.gallery-choices{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));gap:20px;max-width:960px;margin:38px auto 0}
+.gallery-choice{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;min-height:180px;padding:30px 24px;border:1px solid var(--line);background:var(--paper);color:var(--ink);cursor:pointer;transition:background .2s,border-color .2s}
+.gallery-choice:hover{background:#eae7df;border-color:var(--ink)}
+.gallery-choice:focus-visible,.change-gallery:focus-visible{outline:2px solid var(--ink);outline-offset:5px}
+.choice-title{font:400 34px/1.15 var(--serif);overflow-wrap:anywhere;max-width:100%}
+.choice-date{font-size:13px;color:var(--muted)}
+.gallery-welcome{text-align:center;margin:0 auto 45px;max-width:900px;padding:0 14px}
+.gallery-welcome .eyebrow{margin-bottom:14px}
+.gallery-date{font:400 clamp(30px,4vw,42px)/1.3 "Allura","Segoe Script",cursive;margin:12px 0 0}
+.change-gallery{display:inline-block;border:0;border-bottom:1px solid var(--line);background:none;color:var(--muted);font-size:12px;padding:5px 0;margin-top:20px;cursor:pointer}
+.change-gallery[hidden]{display:none}
+/* A clear proofing mark, while keeping the photo and controls visible. */
+.photo.selected::after{content:"SELECTED";display:flex;align-items:center;justify-content:center;background:rgba(20,20,18,.43);border:0;color:#fff;font:600 12px/1 var(--sans);letter-spacing:.22em;text-shadow:0 1px 5px rgba(0,0,0,.3);pointer-events:none}
+.select-button,.photo-name,.photo-retry{z-index:1}
+.photo.selected .photo-name{opacity:1}
+.gallery.list-view .photo.selected::after{justify-content:flex-end;padding-right:65px;background:rgba(20,20,18,.55);font-size:10px}
+.gallery.list-view .photo.selected .photo-name{color:#fff;padding-right:175px}
+/* Compact display switch, available in every photo gallery. */
+.view-toggle{display:inline-flex;border:1px solid #85857f;border-radius:999px;overflow:hidden;margin-top:8px;vertical-align:middle}
+.view-toggle button{display:flex;align-items:center;justify-content:center;gap:6px;min-width:54px;min-height:36px;padding:8px 11px;color:var(--ink);background:#fff}
+.view-toggle button+button{border-left:1px solid #85857f}
+.view-toggle button.active{background:#c8e8fa;color:#182c37}
+.view-toggle button:hover{background:#e4f2fa}
+.view-toggle button:focus-visible{outline:2px solid var(--ink);outline-offset:-4px}
+.view-toggle svg{width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:1.6;flex-shrink:0}
+.view-check{display:none;font-size:13px;line-height:1}
+.view-toggle .active .view-check{display:inline}
+.gallery.list-view .photo img{flex-shrink:0}
+.gallery.list-view .photo-name{min-width:0}
+@media(max-width:480px){.gallery.list-view .photo img{width:76px}.gallery.list-view .photo.selected::after{justify-content:flex-start;padding-left:7px;font-size:8px;letter-spacing:.08em}.gallery.list-view .photo.selected .photo-name{padding-right:58px}}
+.choose-more{margin:28px auto 0;justify-content:center}.selection-message{text-align:center;margin:0 auto 24px;padding:0 15px}.selection-message:empty{display:none}
+.cart-heading{font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:#ddd;margin:8px 0 12px}
+.tray-detail{max-height:min(65vh,540px);overflow:auto}.tray-detail ol{list-style:none;padding-left:0;max-height:180px}
+.tray-detail li{display:flex;gap:12px;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid #45443e}.tray-detail li>span{min-width:0;overflow-wrap:anywhere}
+.tray-detail li button{flex-shrink:0;border:1px solid #77776e;background:transparent;color:#fff;padding:5px 9px;font-size:11px;cursor:pointer}.tray-detail li button:hover{background:#45443e}.tray-detail li button:disabled{opacity:.5;cursor:wait}
+.unsend-hint{font-size:11px;line-height:1.5;color:#bbb;margin:10px 0 18px}.photo.sent::after{content:"SENT"}.select-button:disabled{cursor:wait;opacity:.7}
+.tray-detail .button[hidden]{display:none}
+.cart-choose-more{display:block;width:100%;margin:12px 0 0;padding:10px;border:1px solid #77776e;background:transparent;color:#fff;cursor:pointer}.cart-choose-more[hidden]{display:none}.cart-choose-more:disabled{opacity:.5;cursor:wait}
+@media(max-width:760px){body[data-stage] main{padding-bottom:100px}}
+.tray .message.success{color:#d8ff4f}.tray .message.error{color:#ffb8ae}
+/* Monochrome progress, with a white ring marking the current step. */
+.flow{--accent:#fff;--ink:#242424;--muted:#707070}
+.flow-step{border-color:#d5d5d5;box-shadow:0 7px 18px rgba(0,0,0,.07)}
+.flow-step.current{box-shadow:0 9px 22px rgba(0,0,0,.12),inset 0 0 0 4px #fff}
+.flow-step.complete span,.flow-step.complete p,.flow-step.current p,.flow-step.touring p{color:#ccc}
+.flow-line{border-color:#d5d5d5}
+/* Gallery choices: generous typography, numbered rows and a clear open action. */
+.gallery-choices{grid-template-columns:minmax(0,1fr);gap:0;max-width:820px;margin-top:42px;border-top:1px solid #d4d4d4}
+.gallery-choice{display:grid;grid-template-columns:40px minmax(0,1fr) 48px;grid-template-rows:auto auto;gap:8px 24px;min-height:138px;padding:28px 20px;text-align:left;border:0;border-bottom:1px solid #d4d4d4;background:#fff}
+.gallery-choice:hover{background:#f4f4f4;border-color:#d4d4d4}
+.choice-number{grid-column:1;grid-row:1 / 3;align-self:center;color:#888;font-size:11px;letter-spacing:.12em}
+.choice-title{grid-column:2;grid-row:1;font-size:clamp(28px,4vw,40px);align-self:end}
+.choice-date{grid-column:2;grid-row:2;align-self:start;color:#737373}
+.choice-arrow{grid-column:3;grid-row:1 / 3;display:grid;place-items:center;width:46px;height:46px;border:1px solid #c7c7c7;border-radius:50%;font-size:23px;transition:background .2s,color .2s}
+.gallery-choice:hover .choice-arrow,.gallery-choice:focus-visible .choice-arrow{background:#242424;color:#fff;border-color:#242424}
+/* The zoom view always states whether this photograph is selected. */
+.lightbox-status{position:absolute;z-index:2;top:22px;left:50%;transform:translateX(-50%);padding:10px 17px;border:1px solid #777;border-radius:999px;font-size:10px;font-weight:600;letter-spacing:.14em;white-space:nowrap;background:#262626;color:#ddd;pointer-events:none}
+.lightbox-status[data-status="selected"],.lightbox-status[data-status="sent"]{background:#fff;color:#242424;border-color:#fff}
+.lightbox-status[data-status="selected"]::before,.lightbox-status[data-status="sent"]::before{content:"\2713";margin-right:8px}
+.lightbox-select.selected{background:#fff;border-color:#fff;color:#242424}
+@media(max-width:760px){.gallery-choice{grid-template-columns:24px minmax(0,1fr) 38px;gap:8px 12px;padding:24px 8px;min-height:124px}.choice-arrow{width:36px;height:36px;font-size:20px}.lightbox-status{top:20px;font-size:9px;padding:9px 12px}.lightbox-meta{flex-wrap:wrap;justify-content:center;text-align:center}.lightbox-meta figcaption{width:100%;overflow-wrap:anywhere}dialog img{max-height:calc(100dvh - 185px)}dialog figure{padding-top:68px}}
+@media(prefers-reduced-motion:reduce){.choice-arrow{transition:none}}
+#lightbox{position:fixed;inset:0;margin:0;width:100vw;height:100dvh;overflow:hidden}
+html:has(#lightbox[open]){overflow:hidden;scroll-behavior:auto}
+@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}}

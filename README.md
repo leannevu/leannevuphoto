@@ -1,21 +1,36 @@
-# Leanne Vu Photo — client selections
+# Leanne Vu Photo
 
-Flask app for opening a client's Google Drive or public NordLocker gallery by email address, selecting files, and emailing an edit list.
+Client galleries for Google Drive and NordLocker, with PostgreSQL-backed saved
+carts and sent edit lists.
 
-## Setup
+## Project layout
 
-1. In the same Google Cloud project, enable **Google Drive API**.
-2. Create an **API key** under APIs & Services → Credentials. Because Flask calls Google from the server, set **Application restrictions** to `None` for local development (an HTTP-referrer/“Web sites” restriction will fail). Under **API restrictions**, restrict it to **Google Drive API**. The existing OAuth client-secret file is not used for public folders; keep it private.
-3. Copy `.env.example` to `.env` and add the API key and email settings.
-4. Add each client gallery to `data/emails.csv`, one per line, using the columns `email,folder_url,stage,process`. Valid stages are `choose_edits`, `wait_for_edits`, and `final_edits`. Set `process` to `google` for Google Drive or `nord` for NordLocker. The process must match the link. Email matching is case-insensitive. A folder URL can have only one current stage and process.
-
-```csv
-email,folder_url,stage,process
-client@example.com,https://drive.google.com/drive/folders/PROOFS_ID,choose_edits,google
-client@example.com,https://drive.google.com/drive/folders/FINALS_ID,final_edits,google
+```text
+app.py                    Flask routes and application entry point
+services/
+  database.py             PostgreSQL gallery and selection storage
+  selection_store.py      Optional CSV compatibility storage
+  nordlocker/
+    bridge.py             Isolated browser, decryption and preview cache
+    bootstrap.js          NordLocker browser integration
+static/                   Browser JavaScript and styles
+templates/                Page templates
+docs/NORDLOCKER.md         NordLocker implementation notes
+Dockerfile                Production image with explicit runtime copies
+requirements.txt          Runtime dependencies
+Procfile / railway.json   Hosting configuration
 ```
-5. For Gmail SMTP, enable 2-Step Verification and create an app password. Put the app password in `SMTP_PASSWORD`.
-6. Install and run:
+
+Private development tools, tests, old migration scripts, credentials and visual
+checks live under `.local/` and are ignored by Git. `.test-tools/` contains local
+browser-test dependencies and is also ignored. Neither directory enters the
+Docker build context. Generated screenshots belong in `.local/artifacts/`.
+
+## Run locally
+
+Create a `.env` file with `DATABASE_URL`, `GOOGLE_API_KEY`, `SECRET_KEY`,
+`SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, and
+`PORTFOLIO_OWNER_EMAIL`. Keep credentials out of Git.
 
 ```powershell
 python -m venv .venv
@@ -24,82 +39,85 @@ pip install -r requirements.txt
 flask --app app run --debug
 ```
 
-Open http://127.0.0.1:5000. The Drive folder must be shared as **Anyone with the link → Viewer**.
+Open http://127.0.0.1:5000. Google Drive folders need **Anyone with the link -
+Viewer** sharing and a Google API key with Drive API enabled. Restrict the key to
+Drive API; browser-referrer restrictions do not work for requests from Flask.
+Use a Gmail app password if sending through Gmail SMTP.
 
-Email is sent from the authenticated SMTP account with the client's address in `Reply-To`; mail providers do not allow arbitrary visitors to send as themselves.
+## PostgreSQL
 
-## Public NordLocker galleries
+The existing `public.emails` table is the source of gallery access and cart
+state. `DATABASE_URL` takes precedence over any legacy CSV or JSON mapping.
+Each row represents one email/folder pair and contains:
 
-Use the complete public share URL, including its `#` fragment, in `data/emails.csv`
-or `CLIENT_GALLERIES_JSON`. The existing stages work with either provider.
-Set the CSV `process` column to `nord` for these links. The older three-column
-CSV format remains supported and infers the process from the link.
+- `email`, `gallery`, `date`, `folder_url`, `stage`, `process`
+- `saved` and `sent` JSONB arrays, each defaulting to `[]`
+- `id`, `created_at`, and `updated_at`
 
-NordLocker photos are decrypted on demand using NordLocker's own web client in
-an isolated headless browser. The server lists metadata first, then loads small
-stored thumbnails as cards enter the screen. Opening a photo fetches and decrypts
-that original in memory and returns a resized preview. Final-stage downloads
-return the original bytes. Missing thumbnails fall back to resizing one original.
-No ZIP archive or photo files are saved; previews use a bounded 32 MB memory cache.
-The share key stays on the server. Signed photo URLs expire after 24 hours and are
-checked against the current client mapping and stage on every request.
-
-Install `requirements.txt` and ensure Microsoft Edge is installed on Windows.
-On Linux, install the browser with `python -m playwright install --with-deps chromium`.
-`NORDLOCKER_BROWSER_CHANNEL` can override the browser channel; an empty value uses
-Playwright's Chromium. Set a persistent random `SECRET_KEY` in production so
-signed photo URLs survive restarts. Use one Gunicorn worker with multiple threads
-as configured in `Procfile`.
-
-The browser integration depends on NordLocker's current public client interfaces,
-not a documented third-party API. An upstream client change may require an adapter
-update. Password-protected shares and recursive subfolders are not supported.
-Browser sessions/metadata refresh after five minutes of use. Photo filenames in
-selection emails come from the server's gallery list, alongside the share link.
-
-Checks:
-
-```powershell
-python -m unittest test_gallery_config test_nordlocker
-python check_google_live.py
-python check_google_ui.py
-python check_nordlocker_live.py
-python check_nordlocker_ui.py
-```
-
-The opt-in live checks use the configured Google/NordLocker galleries and mock
-email delivery. They transfer thumbnails and individual previews but never
-download an archive. The Google browser test intercepts original-download clicks.
-
-## Railway client galleries
-
-This repository uses a Dockerfile that installs Chromium and its system dependencies.
-Connect the GitHub
-repository to a Railway service (or run `railway up`), add the variables below,
-and generate a public domain under **Settings -> Networking**. Railway starts
-the app with Gunicorn and checks `/health` before routing traffic to it.
-
-Required production variables:
-
-- `GOOGLE_API_KEY`
-- `CLIENT_GALLERIES_JSON`
-- `SMTP_HOST`
-- `SMTP_PORT` (usually `587`, or `465` for SMTP over SSL)
-- `SMTP_USER`
-- `SMTP_PASSWORD`
-- `PORTFOLIO_OWNER_EMAIL`
-- `SECRET_KEY` (persistent random signing secret for NordLocker photo URLs)
-
-Do not set `PORT`; Railway provides it automatically. The local `remove.py`
-utility is ignored by Git and is not included in GitHub-based deployments.
-
-Because `data/emails.csv` contains private client information and is excluded from Git, store the production mapping in Railway as a service variable named `CLIENT_GALLERIES_JSON`. Its value must be a JSON object:
+An email can have multiple galleries. Use `google` or `nord` for `process` and
+`choose_edits`, `wait_for_edits`, or `final_edits` for `stage`.
+The database stores photo references, not the image files:
 
 ```json
-{"client@example.com":{"https://drive.google.com/drive/folders/PROOFS_ID":{"stage":"choose_edits","process":"google"},"https://drive.google.com/drive/folders/FINALS_ID":{"stage":"final_edits","process":"google"}}}
+[{"id":"provider-photo-id","name":"Portrait.jpg"}]
 ```
 
-Add more clients as additional properties in the same object. When this variable exists, it takes precedence over the local CSV file.
-Older JSON entries whose values are stage strings still work; their process is
-inferred from the link. Incorrect process values or process/link mismatches return
-a specific gallery-configuration message rather than silently selecting a provider.
+```sql
+SELECT id, gallery, date, saved, sent
+FROM public.emails
+WHERE email = 'client@example.com'
+ORDER BY id;
+```
+
+Selecting a proof saves it immediately. Sending moves the selected drafts to
+`sent` and the gallery to `wait_for_edits`. **Choose more edits** reopens the
+proofs. **Unsend** removes an item and emails the updated complete edit list;
+it cannot recall earlier email. A completed gallery cannot change edit requests.
+Database row locks serialize updates. Failed email delivery leaves the stored
+list unchanged. A process crash between SMTP delivery and database commit can
+still require checking the latest list.
+
+The `data/` folder is not needed with PostgreSQL. Historical CSV import tools
+are kept locally under `.local/archive/`.
+
+## NordLocker
+
+The complete public share URL, including its fragment, stays in `folder_url`.
+`services/nordlocker/` lists metadata, decrypts previews on demand and uses a
+bounded memory cache. Original downloads are available only at the final stage.
+NordLocker runs in a dedicated browser thread; preserve the single-worker,
+multiple-thread Gunicorn configuration.
+
+Windows development uses Microsoft Edge. Docker installs Chromium and its
+system dependencies. `NORDLOCKER_BROWSER_CHANNEL` can override the browser
+channel. Set a persistent `SECRET_KEY` so signed photo URLs survive restarts.
+See [NordLocker notes](docs/NORDLOCKER.md) for provider-specific details.
+
+## Deployment
+
+The Dockerfile copies only `app.py`, `services/`, `static/`, `templates/` and
+runtime dependencies. `.dockerignore` also restricts the build context to those
+inputs. Local tools, secrets, screenshots, documentation and tests are excluded.
+
+Set the same environment variables on the web service, using a Railway database
+variable reference for `DATABASE_URL`, then deploy. Railway provides `PORT`.
+The existing database is already populated; deployment does not run migrations
+or modify client records. The web service does not need a data volume.
+
+The app starts as `gunicorn app:app` with one worker, eight threads, and a
+200-second request timeout. `/health` is the hosting health endpoint.
+
+## Local checks
+
+On this workstation, the ignored `.local/` directory provides:
+
+```powershell
+python .local/run.py tests
+python .local/run.py check_database
+python .local/run.py check_gallery_choices_ui
+```
+
+The database check rolls back all test data and mocks email delivery. The browser
+check uses a temporary CSV and sample photos. NordLocker performance diagnostics
+are available through `python .local/run.py check_nordlocker_performance --help`.
+These local tools are intentionally not part of a fresh clone or deployment.

@@ -1,7 +1,10 @@
 FROM python:3.12-slim
 WORKDIR /app
-ENV PYTHONUNBUFFERED=1 PLAYWRIGHT_BROWSERS_PATH=/opt/playwright
+ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 PLAYWRIGHT_BROWSERS_PATH=/opt/playwright
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt && python -m playwright install --with-deps chromium
-COPY . .
+COPY app.py ./
+COPY services/ ./services/
+COPY static/ ./static/
+COPY templates/ ./templates/
 CMD ["sh", "-c", "exec gunicorn app:app --bind 0.0.0.0:${PORT:-5000} --workers 1 --threads 8 --timeout 200"]

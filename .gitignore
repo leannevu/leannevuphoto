@@ -1,9 +1,24 @@
+# Local credentials and private tooling.
 .env
+.env.*
+!.env.example
+.local/
+.test-tools/
 client_secret_*.json
-data/emails.csv
+
+# Generated Python and editor files.
 __pycache__/
+*.py[cod]
 .venv/
 ven/
-*.pyc
-remove.py
-.test-tools/
+.pytest_cache/
+.coverage
+htmlcov/
+.vscode/
+.idea/
+
+# Legacy CSV data and generated previews/logs.
+data/
+gallery-*-check.png
+*.log
+*.tmp

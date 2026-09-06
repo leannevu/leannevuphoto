@@ -6,7 +6,7 @@
   <title>Your photographs — Leanne Vu Photo</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=Libre+Caslon+Display&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Allura&family=DM+Sans:wght@400;500;600&family=Libre+Caslon+Display&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
@@ -28,7 +28,20 @@
       <div id="form-message" class="message" role="status"></div>
     </section>
 
+    <section id="gallery-picker" class="gallery-picker" hidden aria-labelledby="picker-title">
+      <p class="eyebrow">Your photographs</p>
+      <h2 id="picker-title" tabindex="-1">Choose your gallery.</h2>
+      <div id="gallery-choices" class="gallery-choices"></div>
+    </section>
+
     <section id="client-space" class="client-space" hidden>
+      <div class="gallery-welcome">
+        <p class="eyebrow">Welcome to your gallery</p>
+        <h2 id="welcome-title"></h2>
+        <p id="welcome-date" class="gallery-date"></p>
+        <button id="change-gallery" class="change-gallery" type="button" hidden>Choose another gallery</button>
+      </div>
+      <p id="selection-message" class="message selection-message" role="status"></p>
       <nav class="flow" aria-label="Your photo process">
         <div class="flow-step" data-stage="choose_edits"><span>01</span><strong>Choose edits</strong><p>Select the photographs you would like me to edit.</p></div>
         <span class="flow-line" aria-hidden="true"></span>
@@ -40,13 +53,17 @@
         <p class="eyebrow">Your current stage</p>
         <h2>Your selections are being edited.</h2>
         <p>I’ll let you know as soon as your finished photographs are ready here.</p>
+        <button id="choose-more" class="button dark choose-more" type="button">Choose more edits</button>
       </div>
     </section>
 
     <section id="gallery-section" class="gallery-section" hidden>
       <div class="gallery-heading">
         <div><p id="gallery-eyebrow" class="eyebrow">Your proofs</p><h2 id="gallery-title">Choose your favorites.</h2></div>
-        <div class="gallery-tools"><p id="gallery-count" class="gallery-count"></p><div id="view-toggle" class="view-toggle" hidden><button class="active" data-view="grid" type="button">Gallery</button><button data-view="list" type="button">List</button></div></div>
+        <div class="gallery-tools"><p id="gallery-count" class="gallery-count"></p><div id="view-toggle" class="view-toggle" role="group" aria-label="Gallery display">
+          <button data-view="list" type="button" aria-label="List view" aria-pressed="false" title="List view"><span class="view-check" aria-hidden="true">&#10003;</span><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 5h12M4 10h12M4 15h12"/></svg></button>
+          <button class="active" data-view="grid" type="button" aria-label="Grid view" aria-pressed="true" title="Grid view"><span class="view-check" aria-hidden="true">&#10003;</span><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 3h5v5H3zM12 3h5v5h-5zM3 12h5v5H3zM12 12h5v5h-5z"/></svg></button>
+        </div></div>
       </div>
       <div id="gallery" class="gallery"></div>
     </section>
@@ -58,8 +75,13 @@
       <span id="selected-preview">View filenames</span>
     </button>
     <div id="tray-detail" class="tray-detail">
+      <h3 id="saved-heading" class="cart-heading">Saved - not sent</h3>
       <ol id="selected-list"></ol>
+      <h3 id="sent-heading" class="cart-heading" hidden>Sent for editing</h3>
+      <ol id="sent-list"></ol>
+      <p id="unsend-hint" class="unsend-hint" hidden>Unsend removes a photo from your edit list and notifies Leanne.</p>
       <button id="submit-selection" class="button light" type="button">Add to edits <span aria-hidden="true">→</span></button>
+      <button id="cart-choose-more" class="cart-choose-more" type="button" hidden>Back to photos</button>
       <div id="submit-message" class="message" role="status"></div>
     </div>
   </aside>
@@ -73,6 +95,7 @@
   </div>
 
   <dialog id="lightbox">
+    <div id="lightbox-status" class="lightbox-status" role="status" data-status="unselected">NOT SELECTED</div>
     <button id="lightbox-close" class="lightbox-close" aria-label="Close">×</button>
     <button id="lightbox-prev" class="lightbox-nav prev" aria-label="Previous image">←</button>
     <figure>

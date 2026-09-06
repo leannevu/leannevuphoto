@@ -23,6 +23,23 @@ async () => {
   const files = nodes.filter(n => n.fileType === 'image' && /\.(jpe?g|png|webp|gif)$/i.test(n.name))
     .sort((a, b) => a.name.localeCompare(b.name, undefined, {numeric: true}));
   const byId = new Map(files.map(n => [n.id, n]));
+  const thumbnailCache = new Map();
+  const referenceKey = ref => `${ref.journalId.low}:${ref.journalId.high}:${ref.sequence}`;
+  const byReference = new Map(files.map(n => [referenceKey(n.mountedRoot || n.reference), n.id]));
+  async function thumbnailBatch(node) {
+    if (thumbnailCache.has(node.id)) return;
+    const start = files.indexOf(node);
+    const batch = files.slice(start, start + 8).filter(n => n.hasThumbnail && !thumbnailCache.has(n.id));
+    if (!batch.length) return;
+    const items = await thumbnails.downloadThumbnails({
+      nodeReferences: batch.map(n => n.mountedRoot || n.reference), signal: new AbortController().signal
+    });
+    for (const item of items || []) {
+      const id = byReference.get(referenceKey(item.node));
+      if (id) thumbnailCache.set(id, new Uint8Array(item.data));
+    }
+    while (thumbnailCache.size > 64) thumbnailCache.delete(thumbnailCache.keys().next().value);
+  }
   const toBase64 = bytes => {
     let binary = '';
     for (let i = 0; i < bytes.length; i += 32768) {
@@ -36,11 +53,8 @@ async () => {
       if (!node) throw new Error('Photo is no longer in this gallery');
       let blob;
       if (kind === 'thumbnail' && node.hasThumbnail) {
-        const items = await thumbnails.downloadThumbnails({
-          nodeReferences: [node.mountedRoot || node.reference], signal: new AbortController().signal
-        });
-        // NLCore returns shared WASM memory: copy before constructing a Blob.
-        if (items?.length) blob = new Blob([new Uint8Array(items[0].data)]);
+        await thumbnailBatch(node);
+        if (thumbnailCache.has(id)) blob = new Blob([thumbnailCache.get(id)]);
       }
       if (!blob) {
         if (node.sizeNumber > 100 * 1024 * 1024) throw new Error('Photo exceeds the 100 MB viewing limit');
@@ -54,10 +68,11 @@ async () => {
         blob = new Blob(chunks);
       }
       let mimeType = {jpg:'image/jpeg', jpeg:'image/jpeg', png:'image/png', webp:'image/webp', gif:'image/gif'}[node.extension.slice(1).toLowerCase()];
-      if (kind !== 'original') {
+      // Full previews retain the original bytes, dimensions, color profile and metadata.
+      if (kind === 'thumbnail') {
         const bitmap = await createImageBitmap(blob);
         try {
-          const limit = kind === 'thumbnail' ? 600 : 1800;
+          const limit = 600;
           const scale = Math.min(1, limit / Math.max(bitmap.width, bitmap.height));
           const canvas = document.createElement('canvas');
           canvas.width = Math.max(1, Math.round(bitmap.width * scale));

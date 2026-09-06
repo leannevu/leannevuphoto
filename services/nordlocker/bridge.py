@@ -27,7 +27,7 @@ class NordLockerBridge:
         self.sessions = OrderedDict()
         self.cache = OrderedDict()
         self.cache_bytes = 0
-        self.bootstrap = Path(__file__).with_name('nordlocker_bridge.js').read_text(encoding='utf-8')
+        self.bootstrap = Path(__file__).with_name('bootstrap.js').read_text(encoding='utf-8')
 
     def _start(self):
         if self.browser and self.browser.is_connected():
@@ -36,7 +36,7 @@ class NordLockerBridge:
             self.playwright.stop()
             self.sessions.clear()
         # Local development tooling; normal deployments install requirements.txt.
-        local_tools = Path(__file__).parent / '.test-tools'
+        local_tools = Path(__file__).resolve().parents[2] / '.test-tools'
         if local_tools.is_dir():
             sys.path.insert(0, str(local_tools))
         try:
@@ -88,7 +88,8 @@ class NordLockerBridge:
                 return session['files']
             if file_id not in {item['id'] for item in session['files']}:
                 raise NordLockerError('This photo is no longer in your gallery. Please reopen it.')
-            key = (url, file_id, kind)
+            # A full-quality preview is identical to the original download.
+            key = (url, file_id, 'preview' if kind == 'original' else kind)
             if key in self.cache:
                 self.cache.move_to_end(key)
                 return self.cache[key]
