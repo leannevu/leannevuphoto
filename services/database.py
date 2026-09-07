@@ -5,6 +5,7 @@ from contextlib import contextmanager
 import psycopg
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
+from .stages import selection_stage
 
 
 SCHEMA = """
@@ -43,11 +44,11 @@ def connection():
 def access_for_email(email):
     with connection() as conn:
         rows = conn.execute(
-            'SELECT folder_url, gallery, date, stage, process FROM public.emails WHERE email = %s ORDER BY id',
+            'SELECT folder_url, gallery, date, stage, process, saved, sent FROM public.emails WHERE email = %s ORDER BY id',
             (email.strip().casefold(),),
         ).fetchall()
     return {row['folder_url']: dict(gallery=row['gallery'], date=row['date'].isoformat() if row['date'] else '',
-                                    stage=row['stage'], process=row['process']) for row in rows} or None
+                                    stage=selection_stage(row['stage'], row['saved'], row['sent']), process=row['process']) for row in rows} or None
 
 
 def read(email, folder_url):
@@ -58,6 +59,7 @@ def read(email, folder_url):
         ).fetchone()
     if row is None:
         raise RuntimeError('This gallery is no longer available. Please reopen your gallery.')
+    row['stage'] = selection_stage(row['stage'], row['saved'], row['sent'])
     return row
 
 
@@ -73,7 +75,33 @@ def transaction(email, folder_url):
             raise RuntimeError('This gallery is no longer available. Please reopen your gallery.')
         state = dict(saved=row['saved'], sent=row['sent'], stage=row['stage'])
         yield state
+        state['stage'] = selection_stage(state['stage'], state['saved'], state['sent'])
         conn.execute(
             'UPDATE public.emails SET saved = %s, sent = %s, stage = %s, updated_at = now() WHERE id = %s',
             (Jsonb(state['saved']), Jsonb(state['sent']), state['stage'], row['id']),
         )
+
+
+STAGE_RULE_SQL = """
+CREATE OR REPLACE FUNCTION public.sync_gallery_selection_stage()
+RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+    IF NEW.stage <> 'final_edits' THEN
+        NEW.stage := CASE WHEN jsonb_array_length(NEW.sent) > 0
+                          THEN 'wait_for_edits' ELSE 'choose_edits' END;
+    END IF;
+    RETURN NEW;
+END;
+$$;
+DROP TRIGGER IF EXISTS gallery_selection_stage ON public.emails;
+CREATE TRIGGER gallery_selection_stage
+BEFORE INSERT OR UPDATE OF saved, sent, stage ON public.emails
+FOR EACH ROW EXECUTE FUNCTION public.sync_gallery_selection_stage();
+UPDATE public.emails
+SET stage = CASE WHEN jsonb_array_length(sent) > 0
+                 THEN 'wait_for_edits' ELSE 'choose_edits' END,
+    updated_at = now()
+WHERE stage <> 'final_edits'
+  AND stage IS DISTINCT FROM CASE WHEN jsonb_array_length(sent) > 0
+                                 THEN 'wait_for_edits' ELSE 'choose_edits' END;
+"""

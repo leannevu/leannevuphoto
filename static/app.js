@@ -98,6 +98,12 @@ function applySelections(selections) {
   state.sent = new Map((selections.sent || []).map(file => [file.id, images.get(file.id) || file]));
   state.stage = selections.stage || state.stage;
   document.body.dataset.stage = state.stage;
+  const current = {choose_edits: 0, wait_for_edits: 1, final_edits: 2}[state.stage];
+  document.querySelectorAll('.flow-step').forEach((step, index) => {
+    step.classList.toggle('current', index === current);
+    step.classList.toggle('complete', index < current);
+  });
+  document.querySelectorAll('.flow-line').forEach((line, index) => line.classList.toggle('complete', index < current));
   updateTray();
   state.images.forEach(updateSelectionUI);
 }
@@ -175,6 +181,7 @@ function setSelectionBusy(busy) {
 async function mutateSelections(action, payload = {}) {
   if (state.busy) return;
   setSelectionBusy(true);
+  let reopenGallery = false;
   message($("#submit-message"));
   message($("#selection-message"), action === "save" || action === "remove" ? "Saving your selection..." : "Updating your edit list...");
   try {
@@ -182,6 +189,7 @@ async function mutateSelections(action, payload = {}) {
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || "Your changes could not be saved.");
     applySelections(data.selections);
+    reopenGallery = state.stage === "choose_edits" && $("#gallery-section").hidden;
     message($("#selection-message"), data.message, "success");
     message($("#submit-message"), data.message, "success");
     if (action === "send") {
@@ -195,6 +203,7 @@ async function mutateSelections(action, payload = {}) {
     message($("#submit-message"), error.message, "error");
   } finally {
     setSelectionBusy(false);
+    if (reopenGallery) await loadGallery(state.email, state.galleryId);
   }
 }
 

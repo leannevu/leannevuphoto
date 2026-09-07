@@ -14,6 +14,7 @@ from urllib.parse import urlsplit
 import requests
 from services import selection_store
 from services import database as database_store
+from services.stages import selection_stage
 from dotenv import load_dotenv
 from flask import Flask, jsonify, render_template, request, send_file, url_for
 from itsdangerous import BadSignature, URLSafeTimedSerializer
@@ -379,8 +380,7 @@ def selection_state(email, folder_url, configured_stage):
         return database_store.read(email, folder_url)
     path, _ = selection_location()
     state = selection_store.read(path, email, folder_url)
-    state['stage'] = ('wait_for_edits' if state['stage'] == 'wait_for_edits'
-                      and configured_stage == 'choose_edits' else configured_stage)
+    state['stage'] = selection_stage(configured_stage, state['saved'], state['sent'])
     return state
 
 

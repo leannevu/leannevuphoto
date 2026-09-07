@@ -6,6 +6,7 @@ import tempfile
 import threading
 from contextlib import contextmanager
 from pathlib import Path
+from .stages import selection_stage
 
 
 _lock = threading.RLock()
@@ -83,6 +84,7 @@ def transaction(path, email, url, stage, allow_create=False):
             fd, temp_path = tempfile.mkstemp(prefix=path.name + '.', suffix='.tmp', dir=path.parent)
             os.close(fd)
             yield state
+            state['stage'] = selection_stage(state['stage'], state['saved'], state['sent'])
             header = [cell.strip().casefold() for cell in rows[0]]
             for key in ('saved', 'sent'):
                 if key not in header:

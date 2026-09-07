@@ -69,8 +69,11 @@ WHERE email = 'client@example.com'
 ORDER BY id;
 ```
 
-Selecting a proof saves it immediately. Sending moves the selected drafts to
-`sent` and the gallery to `wait_for_edits`. **Choose more edits** reopens the
+Selecting a proof saves it immediately and keeps the gallery in `choose_edits`.
+Any photos in `sent` set the gallery to `wait_for_edits`. Unsending the last
+photo returns it to `choose_edits`, even when saved drafts remain. PostgreSQL
+automatically synchronizes the stage on changes to these lists. `final_edits`
+remains an explicit completed-gallery stage. **Choose more edits** reopens the
 proofs. **Unsend** removes an item and emails the updated complete edit list;
 it cannot recall earlier email. A completed gallery cannot change edit requests.
 Database row locks serialize updates. Failed email delivery leaves the stored
