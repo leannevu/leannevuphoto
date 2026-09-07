@@ -25,8 +25,9 @@
         <button class="button dark" type="submit"><span>Open gallery</span><span aria-hidden="true">↗</span></button>
       </form>
       <p class="hint">Use the same email address you provided when your gallery was created.</p>
-      <div id="form-message" class="message" role="status"></div>
     </section>
+
+    <div id="form-message" class="message form-message" role="status"></div>
 
     <section id="gallery-picker" class="gallery-picker" hidden aria-labelledby="picker-title">
       <p class="eyebrow">Your photographs</p>
@@ -37,7 +38,7 @@
     <section id="client-space" class="client-space" hidden>
       <div class="gallery-welcome">
         <p class="eyebrow">Welcome to your gallery</p>
-        <h2 id="welcome-title"></h2>
+        <h2 id="welcome-title" tabindex="-1"></h2>
         <p id="welcome-date" class="gallery-date"></p>
         <button id="change-gallery" class="change-gallery" type="button" hidden>Choose another gallery</button>
       </div>
@@ -49,6 +50,10 @@
         <span class="flow-line" aria-hidden="true"></span>
         <div class="flow-step" data-stage="final_edits"><span>03</span><strong>Final edits</strong><p>Your finished photographs are ready to view and download.</p></div>
       </nav>
+      <a id="view-gallery" class="view-gallery" href="#gallery-section" hidden>
+        <span>View gallery</span>
+        <span class="gallery-scroll-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 4v15m-6-6 6 6 6-6"/></svg></span>
+      </a>
       <div id="stage-message" class="stage-message" hidden>
         <p class="eyebrow">Your current stage</p>
         <h2>Your selections are being edited.</h2>
@@ -59,13 +64,17 @@
 
     <section id="gallery-section" class="gallery-section" hidden>
       <div class="gallery-heading">
-        <div><p id="gallery-eyebrow" class="eyebrow">Your proofs</p><h2 id="gallery-title">Choose your favorites.</h2></div>
+        <div><p id="gallery-eyebrow" class="eyebrow">Your proofs</p><h2 id="gallery-title" tabindex="-1">Choose your favorites.</h2></div>
         <div class="gallery-tools"><p id="gallery-count" class="gallery-count"></p><div id="view-toggle" class="view-toggle" role="group" aria-label="Gallery display">
           <button data-view="list" type="button" aria-label="List view" aria-pressed="false" title="List view"><span class="view-check" aria-hidden="true">&#10003;</span><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 5h12M4 10h12M4 15h12"/></svg></button>
           <button class="active" data-view="grid" type="button" aria-label="Grid view" aria-pressed="true" title="Grid view"><span class="view-check" aria-hidden="true">&#10003;</span><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 3h5v5H3zM12 3h5v5h-5zM3 12h5v5H3zM12 12h5v5h-5z"/></svg></button>
         </div></div>
       </div>
-      <div id="gallery" class="gallery"></div>
+      <nav class="gallery-pages" aria-label="Browse photographs"><button type="button" data-page="full" aria-pressed="true">Full gallery</button><button type="button" data-page="selected" aria-pressed="false">Selected photos</button></nav>
+<div id="bookmark-tools" class="bookmark-tools"><button id="save-bookmark" type="button">Bookmark this place</button><button id="jump-bookmark" type="button" hidden>Go to bookmark</button><button id="clear-bookmark" type="button" hidden>Unbookmark</button><span id="bookmark-message" role="status"></span></div>
+<p id="gallery-empty" hidden>No selected photos yet. Choose your favorites in the full gallery.</p>
+<div id="gallery" class="gallery"></div>
+<aside id="gallery-ruler" hidden aria-label="Your place in the gallery"><span id="ruler-count"></span><div class="ruler-track" role="progressbar" aria-label="Gallery progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span id="ruler-progress"></span><button id="ruler-bookmark" type="button" hidden title="Go to bookmark" aria-label="Go to bookmarked photo">B</button></div><button id="ruler-save" type="button" aria-label="Bookmark this place" title="Bookmark this place">+</button></aside>
     </section>
   </main>
 
@@ -95,6 +104,9 @@
   </div>
 
   <dialog id="lightbox">
+    <button id="filmstrip-toggle" class="filmstrip-toggle" type="button" aria-label="Hide thumbnail filmstrip" title="Hide thumbnail filmstrip" aria-expanded="true" aria-controls="filmstrip-panel">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h18v14H3zM3 14h18M8 14v5m8-5v5"/></svg>
+    </button>
     <div id="lightbox-status" class="lightbox-status" role="status" data-status="unselected">NOT SELECTED</div>
     <button id="lightbox-close" class="lightbox-close" aria-label="Close">×</button>
     <button id="lightbox-prev" class="lightbox-nav prev" aria-label="Previous image">←</button>
@@ -105,6 +117,9 @@
         <button id="lightbox-select" class="lightbox-select" type="button" aria-pressed="false">Add to edits <span>+</span></button>
       </div>
     </figure>
+    <div id="filmstrip-panel" class="filmstrip-panel">
+      <nav id="filmstrip" class="filmstrip" aria-label="Gallery thumbnails"></nav>
+    </div>
     <button id="lightbox-next" class="lightbox-nav next" aria-label="Next image">→</button>
   </dialog>
   <script src="{{ url_for('static', filename='app.js') }}"></script>

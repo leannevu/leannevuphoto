@@ -147,7 +147,7 @@ def access_for_email(client_email: str) -> dict | None:
                 continue
             if len(row) <= header.index("email") or row[header.index("email")].strip().casefold() != normalized_email:
                 continue
-            if len(row) > len(header) or any(key not in {"saved", "sent"} for key in header[len(row):]):
+            if len(row) > len(header) or any(key not in {"saved", "sent", "bookmark"} for key in header[len(row):]):
                 raise GalleryConfigurationError(f"The gallery configuration on row {row_number} has missing or extra columns. Please contact Leanne.")
             entry = dict(zip(header, (cell.strip() for cell in row)))
             folder_url, stage = entry['folder_url'], entry['stage']
@@ -182,6 +182,8 @@ def client_folder_or_error(data: dict):
         access = access_for_email(client_email)
     except GalleryConfigurationError as exc:
         return None, None, (jsonify(code='GALLERY_CONFIG_ERROR', error=str(exc)), 503)
+    except database_store.DatabaseUnavailableError as exc:
+        return None, None, (jsonify(code=exc.code, error=str(exc)), 503)
     except (OSError, RuntimeError):
         return None, None, (jsonify(code="CLIENT_LIST_UNAVAILABLE", error="We couldn't check your gallery right now. Please try again shortly."), 503)
     if not access:
@@ -450,6 +452,36 @@ def validated_selection_files(access, folder_url, files):
 def email_files(access, folder_url, files):
     nord = gallery_process(access, folder_url) == 'nord'
     return [dict(item, viewUrl=folder_url if nord else f"https://drive.google.com/file/d/{item['id']}/view") for item in files]
+
+
+@app.post('/api/bookmark')
+def bookmark():
+    data = request.get_json(silent=True) or {}
+    email, access, error = client_folder_or_error(data)
+    if error:
+        return error
+    url = selected_folder(access, data.get('gallery_id'))
+    if not url:
+        return jsonify(error='Please choose one of your galleries.'), 400
+    try:
+        file_id = data.get('file_id')
+        if 'file_id' not in data:
+            raise ValueError('Choose a photo to bookmark, or clear your bookmark.')
+        photo = validated_selection_files(access, url, [{'id': file_id}])[0] if file_id is not None else None
+        if database_store.enabled():
+            transaction = database_store.transaction(email, url)
+        else:
+            path, allow_create = selection_location()
+            transaction = selection_store.transaction(path, email, url, gallery_config(url, access[url])['stage'], allow_create)
+        with transaction as selections:
+            selections['bookmark'] = photo
+        return jsonify(bookmark=photo)
+    except ValueError as exc:
+        return jsonify(error=str(exc)), 400
+    except (NordLockerError, requests.RequestException):
+        return jsonify(error='Your photo provider did not respond. Please try again.'), 502
+    except (OSError, RuntimeError):
+        return jsonify(error='Your bookmark could not be saved. Please try again.'), 503
 
 
 @app.post('/api/selections')

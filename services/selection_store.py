@@ -39,10 +39,10 @@ def locate(rows, email, url):
         if len(row) <= max(header.index('email'), header.index('folder_url')):
             continue
         if row[header.index('email')].strip().casefold() == email.strip().casefold() and row[header.index('folder_url')].strip() == url:
-            if len(row) > len(header) or any(key not in {'saved', 'sent'} for key in header[len(row):]):
+            if len(row) > len(header) or any(key not in {'saved', 'sent', 'bookmark'} for key in header[len(row):]):
                 raise RuntimeError('This gallery row has missing or extra columns.')
             entry = dict(zip(header, row))
-            return index, dict(saved=parse_files(entry.get('saved')), sent=parse_files(entry.get('sent')), stage=entry['stage'])
+            return index, dict(saved=parse_files(entry.get('saved')), sent=parse_files(entry.get('sent')), stage=entry['stage'], bookmark=json.loads(entry.get('bookmark') or 'null'))
     return None, dict(saved=[], sent=[], stage='')
 
 
@@ -86,14 +86,14 @@ def transaction(path, email, url, stage, allow_create=False):
             yield state
             state['stage'] = selection_stage(state['stage'], state['saved'], state['sent'])
             header = [cell.strip().casefold() for cell in rows[0]]
-            for key in ('saved', 'sent'):
+            for key in ('saved', 'sent', 'bookmark'):
                 if key not in header:
                     header.append(key)
                     rows[0].append(key)
             row = rows[index]
             row.extend([''] * (len(header) - len(row)))
-            for key in ('saved', 'sent'):
-                row[header.index(key)] = json.dumps(state[key], ensure_ascii=False, separators=(',', ':'))
+            for key in ('saved', 'sent', 'bookmark'):
+                row[header.index(key)] = json.dumps(state.get(key), ensure_ascii=False, separators=(',', ':'))
             row[header.index('stage')] = state['stage']
             with open(temp_path, 'w', newline='', encoding='utf-8') as output:
                 csv.writer(output).writerows(rows)

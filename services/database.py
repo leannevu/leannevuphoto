@@ -1,5 +1,6 @@
 """PostgreSQL gallery records and durable selection carts."""
 import os
+import logging
 from contextlib import contextmanager
 
 import psycopg
@@ -19,6 +20,7 @@ CREATE TABLE IF NOT EXISTS public.emails (
     process text NOT NULL CHECK (process IN ('google', 'nord')),
     saved jsonb NOT NULL DEFAULT '[]'::jsonb CHECK (jsonb_typeof(saved) = 'array'),
     sent jsonb NOT NULL DEFAULT '[]'::jsonb CHECK (jsonb_typeof(sent) = 'array'),
+    bookmark jsonb,
     created_at timestamptz NOT NULL DEFAULT now(),
     updated_at timestamptz NOT NULL DEFAULT now(),
     UNIQUE (email, folder_url)
@@ -30,6 +32,33 @@ def enabled():
     return bool(os.getenv('DATABASE_URL', '').strip())
 
 
+class DatabaseUnavailableError(RuntimeError):
+    def __init__(self, code):
+        self.code = code
+        super().__init__('The gallery database is unavailable. Please try again shortly.')
+
+
+def error_code(exc):
+    codes = {'28P01': 'DB_AUTH_FAILED', '28000': 'DB_AUTH_FAILED',
+             '3D000': 'DB_NAME_INVALID', '42P01': 'DB_TABLE_MISSING',
+             '42703': 'DB_SCHEMA_MISMATCH', '42501': 'DB_PERMISSION_DENIED'}
+    if exc.sqlstate in codes:
+        return codes[exc.sqlstate]
+    # libpq connection errors often have no SQLSTATE. Inspect locally, but never
+    # return or log the raw message: it can contain connection credentials.
+    detail = str(exc).casefold()
+    for fragments, code in (
+        (('password authentication failed',), 'DB_AUTH_FAILED'),
+        (('could not translate host name', 'failed to resolve host', 'name or service not known'), 'DB_HOST_UNRESOLVED'),
+        (('timeout expired', 'connection timed out'), 'DB_CONNECTION_TIMEOUT'),
+        (('connection refused', 'network is unreachable'), 'DB_CONNECTION_REFUSED'),
+        (('invalid connection option', 'missing "="', 'invalid integer value', 'invalid uri'), 'DB_URL_INVALID'),
+    ):
+        if any(fragment in detail for fragment in fragments):
+            return code
+    return 'DB_UNAVAILABLE'
+
+
 @contextmanager
 def connection():
     try:
@@ -37,8 +66,9 @@ def connection():
                              row_factory=dict_row, application_name='leannevu-gallery') as conn:
             yield conn
     except psycopg.Error as exc:
-        # Connection diagnostics can contain host/user details; keep them out of the UI.
-        raise RuntimeError('The gallery database is unavailable. Please try again shortly.') from exc
+        code = error_code(exc)
+        logging.getLogger(__name__).error('Gallery database request failed [%s]', code)
+        raise DatabaseUnavailableError(code) from exc
 
 
 def access_for_email(email):
@@ -54,7 +84,7 @@ def access_for_email(email):
 def read(email, folder_url):
     with connection() as conn:
         row = conn.execute(
-            'SELECT saved, sent, stage FROM public.emails WHERE email = %s AND folder_url = %s',
+            'SELECT saved, sent, stage, bookmark FROM public.emails WHERE email = %s AND folder_url = %s',
             (email.strip().casefold(), folder_url),
         ).fetchone()
     if row is None:
@@ -68,17 +98,17 @@ def transaction(email, folder_url):
     with connection() as conn:
         conn.execute("SET LOCAL lock_timeout = '30s'")
         row = conn.execute(
-            'SELECT id, saved, sent, stage FROM public.emails WHERE email = %s AND folder_url = %s FOR UPDATE',
+            'SELECT id, saved, sent, stage, bookmark FROM public.emails WHERE email = %s AND folder_url = %s FOR UPDATE',
             (email.strip().casefold(), folder_url),
         ).fetchone()
         if row is None:
             raise RuntimeError('This gallery is no longer available. Please reopen your gallery.')
-        state = dict(saved=row['saved'], sent=row['sent'], stage=row['stage'])
+        state = dict(saved=row['saved'], sent=row['sent'], stage=row['stage'], bookmark=row['bookmark'])
         yield state
         state['stage'] = selection_stage(state['stage'], state['saved'], state['sent'])
         conn.execute(
-            'UPDATE public.emails SET saved = %s, sent = %s, stage = %s, updated_at = now() WHERE id = %s',
-            (Jsonb(state['saved']), Jsonb(state['sent']), state['stage'], row['id']),
+            'UPDATE public.emails SET saved = %s, sent = %s, stage = %s, bookmark = %s, updated_at = now() WHERE id = %s',
+            (Jsonb(state['saved']), Jsonb(state['sent']), state['stage'], Jsonb(state.get('bookmark')), row['id']),
         )
 
 

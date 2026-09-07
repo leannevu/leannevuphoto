@@ -3,8 +3,14 @@ state.galleryId = "";
 state.galleries = [];
 state.sent = new Map();
 state.busy = false;
+state.page = "full";
+state.bookmark = null;
+state.bookmarkBusy = false;
 let lazyLoader = null;
 let lightboxRequest = 0;
+let filmstripLoader = null;
+let filmstripImages = null;
+const filmstripButtons = new Map();
 const $ = (selector) => document.querySelector(selector);
 const form = $("#gallery-form");
 const gallery = $("#gallery");
@@ -21,7 +27,8 @@ async function animateWorkflow(stage) {
   steps.forEach((step) => step.classList.remove("complete", "current", "touring"));
   lines.forEach((line) => line.classList.remove("complete", "touring"));
   $("#client-space").hidden = false;
-  $("#client-space").scrollIntoView({behavior: reducedMotion ? "auto" : "smooth", block: "center"});
+  window.scrollTo({top: 0, behavior: "instant"});
+  $("#welcome-title").focus({preventScroll: true});
 
   if (!reducedMotion) await wait(250);
   for (let index = 0; index <= target; index += 1) {
@@ -106,6 +113,7 @@ function applySelections(selections) {
   document.querySelectorAll('.flow-line').forEach((line, index) => line.classList.toggle('complete', index < current));
   updateTray();
   state.images.forEach(updateSelectionUI);
+  refreshGalleryPage();
 }
 
 function updateTray() {
@@ -156,6 +164,12 @@ function updateSelectionUI(image) {
     button.setAttribute("aria-label", label);
     button.setAttribute("aria-pressed", String(isSelected));
   }
+  const thumbnail = filmstripButtons.get(image.id);
+  if (thumbnail) {
+    thumbnail.classList.toggle("selected", isSelected);
+    thumbnail.classList.toggle("sent", isSent);
+    thumbnail.setAttribute("aria-label", `${image.name}${isSent ? ", sent for editing" : isSelected ? ", selected" : ", not selected"}`);
+  }
   if (state.images[state.lightboxIndex]?.id === image.id) {
     const button = $("#lightbox-select");
     button.classList.toggle("selected", isSelected);
@@ -196,6 +210,7 @@ async function mutateSelections(action, payload = {}) {
       $("#lightbox").close();
       $("#gallery-section").hidden = true;
       $("#stage-message").hidden = false;
+      $("#view-gallery").hidden = true;
       await animateWorkflow("wait_for_edits");
     }
   } catch (error) {
@@ -223,9 +238,11 @@ function toggleSelection(image) {
   else state.selected.set(image.id, image);
   updateSelectionUI(image);
   updateTray();
+  refreshGalleryPage();
 }
 
 function openLightbox(index) {
+  if (!state.images.length) return;
   const requestId = ++lightboxRequest;
   state.lightboxIndex = (index + state.images.length) % state.images.length;
   const image = state.images[state.lightboxIndex];
@@ -251,9 +268,56 @@ function openLightbox(index) {
   $("#lightbox-caption").textContent = `${state.lightboxIndex + 1} / ${state.images.length} — ${image.name}`;
   updateSelectionUI(image);
   if (!$("#lightbox").open) $("#lightbox").showModal();
+  renderFilmstrip();
+  updateFilmstripCurrent();
 }
 
-function createLazyLoader() {
+function renderFilmstrip() {
+  if (filmstripImages === state.images) return;
+  filmstripLoader?.stop();
+  filmstripImages = state.images;
+  filmstripButtons.clear();
+  const strip = $("#filmstrip");
+  filmstripLoader = createLazyLoader({root: strip, rootMargin: "80px", cardSelector: ".filmstrip-thumb"});
+  strip.replaceChildren(...state.images.map((image, index) => ({image, index})).filter(({image}) => state.page === "full" || isChosen(image)).map(({image, index}) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "filmstrip-thumb";
+    button.dataset.imageId = image.id;
+    button.title = image.name;
+    const img = document.createElement("img");
+    img.alt = "";
+    img.decoding = "async";
+    img.dataset.source = image.thumbnail;
+    const position = document.createElement("span");
+    position.className = "filmstrip-number";
+    position.textContent = index + 1;
+    position.setAttribute("aria-hidden", "true");
+    button.append(img, position);
+    button.addEventListener("click", () => openLightbox(index));
+    filmstripButtons.set(image.id, button);
+    filmstripLoader.observe(img);
+    return button;
+  }));
+  state.images.forEach(updateSelectionUI);
+}
+
+function updateFilmstripCurrent() {
+  const active = state.images[state.lightboxIndex];
+  filmstripButtons.forEach((button, id) => {
+    button.classList.toggle("current", id === active.id);
+    if (id === active.id) button.setAttribute("aria-current", "true");
+    else button.removeAttribute("aria-current");
+  });
+  requestAnimationFrame(() => {
+    if (!$("#lightbox").open || $("#filmstrip-panel").hidden) return;
+    const strip = $("#filmstrip");
+    const button = filmstripButtons.get(state.images[state.lightboxIndex]?.id);
+    if (button) strip.scrollTo({left: button.offsetLeft - strip.clientWidth / 2 + button.clientWidth / 2, behavior: "instant"});
+  });
+}
+
+function createLazyLoader({root = null, rootMargin = "150px", cardSelector = ".photo"} = {}) {
   const queue = [];
   let active = 0;
   let stopped = false;
@@ -261,14 +325,14 @@ function createLazyLoader() {
     while (!stopped && active < 3 && queue.length) {
       const img = queue.shift();
       active += 1;
-      img.closest('.photo').classList.remove('load-error');
+      img.closest(cardSelector).classList.remove('load-error');
       let finished = false;
       const finish = (failed) => {
         if (finished) return;
         finished = true;
         clearTimeout(timer);
         img.onload = img.onerror = null;
-        img.closest('.photo').classList.toggle('load-error', failed);
+        img.closest(cardSelector).classList.toggle('load-error', failed);
         active -= 1;
         pump();
       };
@@ -286,7 +350,7 @@ function createLazyLoader() {
       }
     });
     pump();
-  }, {rootMargin: '150px'});
+  }, {root, rootMargin});
   return {
     observe: img => observer.observe(img),
     retry: img => { queue.push(img); pump(); },
@@ -361,7 +425,7 @@ function showGalleryPicker() {
   message($("#submit-message"));
   $("#client-space").hidden = true;
   $("#gallery-section").hidden = true;
-  $("#intro").classList.add("compact");
+  $("#intro").hidden = true;
   $("#gallery-choices").replaceChildren(...state.galleries.map((item, index) => {
     const button = document.createElement("button");
     button.type = "button";
@@ -385,7 +449,8 @@ function showGalleryPicker() {
     return button;
   }));
   $("#gallery-picker").hidden = false;
-  $("#picker-title").focus();
+  $("#picker-title").focus({preventScroll: true});
+  window.scrollTo({top: 0, behavior: "instant"});
 }
 
 form.addEventListener("submit", (event) => {
@@ -393,6 +458,15 @@ form.addEventListener("submit", (event) => {
   loadGallery($("#email").value);
 });
 $("#change-gallery").addEventListener("click", showGalleryPicker);
+function scrollToGallery() {
+  if ($("#gallery-section").hidden) return;
+  $("#gallery-title").focus({preventScroll: true});
+  $("#gallery-section").scrollIntoView({behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth", block: "start"});
+}
+$("#view-gallery").addEventListener("click", event => {
+  event.preventDefault();
+  scrollToGallery();
+});
 async function chooseMoreEdits() {
   if (state.busy) return;
   tray.classList.remove("open");
@@ -425,6 +499,8 @@ async function loadGallery(email, galleryId = "", chooseMore = false) {
     if (!data.lazy) await preloadGallery(data.images);
     state.galleries = data.galleries || [];
     state.galleryId = data.gallery.id;
+    tray.classList.remove("open");
+    $("#tray-toggle").setAttribute("aria-expanded", "false");
     $("#gallery-picker").hidden = true;
     $("#welcome-title").textContent = data.gallery.gallery;
     $("#welcome-date").textContent = data.gallery.date;
@@ -442,6 +518,9 @@ async function loadGallery(email, galleryId = "", chooseMore = false) {
     $("#loader").hidden = true;
     document.body.classList.remove("gallery-loading");
     state.images = data.images;
+    state.page = "full";
+    state.bookmark = data.selections?.bookmark || null;
+    message($("#bookmark-message"));
     state.lazy = Boolean(data.lazy);
     state.email = email;
     lazyLoader?.stop();
@@ -452,12 +531,15 @@ async function loadGallery(email, galleryId = "", chooseMore = false) {
     message($("#selection-message"));
     updateTray();
     document.body.dataset.stage = data.stage;
-    $("#intro").classList.add("compact");
+    $("#intro").hidden = true;
+    const waiting = data.stage === "wait_for_edits" && !chooseMore;
+    $("#stage-message").hidden = !waiting;
+    $("#view-gallery").hidden = waiting;
+    $("#gallery-section").hidden = true;
     await animateWorkflow(data.stage);
     if (data.stage === "wait_for_edits" && !chooseMore) {
       $("#gallery-section").hidden = true;
       $("#stage-message").hidden = false;
-      $("#client-space").scrollIntoView({behavior: "smooth"});
       return;
     }
     $("#stage-message").hidden = true;
@@ -470,9 +552,11 @@ async function loadGallery(email, galleryId = "", chooseMore = false) {
     $("#view-toggle").hidden = false;
     $("#gallery-count").textContent = `${data.count} photograph${data.count === 1 ? "" : "s"}`;
     $("#gallery-section").hidden = false;
-    $("#client-space").scrollIntoView({behavior: "smooth"});
+    refreshGalleryPage();
+    if (chooseMore) scrollToGallery();
   } catch (error) {
     message($("#form-message"), error.message, "error");
+    $("#form-message").scrollIntoView({behavior: "smooth", block: "center"});
   } finally {
     $("#loader").hidden = true;
     $("#progress-bar").style.width = "0";
@@ -515,13 +599,129 @@ document.querySelectorAll("#view-toggle button").forEach((button) => button.addE
   });
   gallery.classList.toggle("list-view", button.dataset.view === "list");
 }));
+$("#filmstrip-toggle").addEventListener("click", () => {
+  const panel = $("#filmstrip-panel");
+  panel.hidden = !panel.hidden;
+  $("#lightbox").classList.toggle("filmstrip-hidden", panel.hidden);
+  const button = $("#filmstrip-toggle");
+  button.setAttribute("aria-expanded", String(!panel.hidden));
+  button.setAttribute("aria-label", panel.hidden ? "Show thumbnail filmstrip" : "Hide thumbnail filmstrip");
+  button.title = button.getAttribute("aria-label");
+  if (!panel.hidden) updateFilmstripCurrent();
+});
+$("#lightbox").addEventListener("close", () => {
+  lightboxRequest += 1;
+  filmstripLoader?.stop();
+  filmstripImages = null;
+  filmstripButtons.clear();
+  $("#filmstrip").replaceChildren();
+});
 $("#lightbox-close").addEventListener("click", () => $("#lightbox").close());
-$("#lightbox-prev").addEventListener("click", () => openLightbox(state.lightboxIndex - 1));
-$("#lightbox-next").addEventListener("click", () => openLightbox(state.lightboxIndex + 1));
+$("#lightbox-prev").addEventListener("click", () => stepLightbox(-1));
+$("#lightbox-next").addEventListener("click", () => stepLightbox(1));
 $("#lightbox-select").addEventListener("click", () => toggleSelection(state.images[state.lightboxIndex]));
 $("#lightbox").addEventListener("click", (event) => { if (event.target === $("#lightbox")) $("#lightbox").close(); });
 document.addEventListener("keydown", (event) => {
   if (!$("#lightbox").open) return;
-  if (event.key === "ArrowLeft") openLightbox(state.lightboxIndex - 1);
-  if (event.key === "ArrowRight") openLightbox(state.lightboxIndex + 1);
+  if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+    event.preventDefault();
+    stepLightbox(event.key === "ArrowLeft" ? -1 : 1);
+    if (event.target.closest("#filmstrip")) filmstripButtons.get(state.images[state.lightboxIndex].id)?.focus({preventScroll: true});
+  }
 });
+function isChosen(image) { return image && (state.selected.has(image.id) || (state.stage !== 'final_edits' && state.sent.has(image.id))); }
+function stepLightbox(direction) {
+  const indices = state.images.flatMap((image, index) => state.page === 'full' || isChosen(image) ? [index] : []);
+  if (indices.length) openLightbox(indices[(indices.indexOf(state.lightboxIndex) + direction + indices.length) % indices.length]);
+}
+function refreshGalleryPage() {
+  let count = 0;
+  gallery.querySelectorAll('.photo').forEach(card => {
+    const chosen = state.selected.has(card.dataset.imageId) || (state.stage !== 'final_edits' && state.sent.has(card.dataset.imageId));
+    if (chosen) count++;
+    card.hidden = state.page === 'selected' && !chosen;
+  });
+  $('#gallery-empty').hidden = state.page !== 'selected' || count > 0;
+  $('#bookmark-tools').hidden = state.page !== 'full';
+  document.querySelectorAll('[data-page]').forEach(button => button.setAttribute('aria-pressed', String(button.dataset.page === state.page)));
+  if (state.page === 'selected' && $('#lightbox').open) {
+    filmstripImages = null;
+    if (!count) $('#lightbox').close();
+    else if (!isChosen(state.images[state.lightboxIndex])) stepLightbox(1);
+    else { renderFilmstrip(); updateFilmstripCurrent(); }
+  }
+  updateRuler();
+}
+document.querySelectorAll('[data-page]').forEach(button => button.addEventListener('click', () => {
+  state.page = button.dataset.page;
+  filmstripImages = null;
+  refreshGalleryPage();
+}));
+function currentGalleryPhoto() {
+  let closest = null, distance = Infinity;
+  gallery.querySelectorAll('.photo:not([hidden])').forEach(card => {
+    const delta = Math.abs(card.getBoundingClientRect().top - innerHeight * .3);
+    if (delta < distance) { closest = card; distance = delta; }
+  });
+  return closest;
+}
+function updateRuler() {
+  const section = $('#gallery-section'), bounds = section.getBoundingClientRect();
+  $('#gallery-ruler').hidden = section.hidden || state.page !== 'full' || !state.images.length || bounds.top > innerHeight * .4 || bounds.bottom < 100;
+  const current = currentGalleryPhoto();
+  const index = state.images.findIndex(image => image.id === current?.dataset.imageId);
+  const percent = index < 0 ? 0 : (index + 1) / state.images.length * 100;
+  $('#ruler-count').textContent = `${Math.max(0, index + 1)}/${state.images.length}`;
+  $('#ruler-progress').style.height = `${percent}%`;
+  $('.ruler-track').setAttribute('aria-valuenow', String(Math.round(percent)));
+  const markIndex = state.images.findIndex(image => image.id === state.bookmark?.id);
+  $('#jump-bookmark').hidden = markIndex < 0;
+  $('#clear-bookmark').hidden = !state.bookmark;
+  $('#ruler-bookmark').hidden = markIndex < 0;
+  $('#ruler-bookmark').style.top = `${(markIndex + 1) / Math.max(1, state.images.length) * 100}%`;
+  $('#jump-bookmark').textContent = `Go to bookmark - Photo ${markIndex + 1}`;
+  const atBookmark = markIndex >= 0 && current?.dataset.imageId === state.bookmark.id;
+  $('#save-bookmark').textContent = atBookmark ? 'Place bookmarked' : state.bookmark ? 'Move bookmark here' : 'Bookmark this place';
+  $('#ruler-save').textContent = atBookmark ? 'B' : '+';
+  ['#save-bookmark', '#ruler-save'].forEach(id => $(id).disabled = state.bookmarkBusy || !current || atBookmark);
+  $('#clear-bookmark').disabled = state.bookmarkBusy;
+  gallery.querySelectorAll('.photo').forEach(card => card.classList.toggle('bookmarked', card.dataset.imageId === state.bookmark?.id));
+}
+async function saveBookmark(clear = false) {
+  if (state.bookmarkBusy) return;
+  const photo = currentGalleryPhoto();
+  if (!clear && !photo) return;
+  state.bookmarkBusy = true;
+  const galleryId = state.galleryId;
+  updateRuler();
+  try {
+    const response = await fetch('/api/bookmark', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({email:state.email, gallery_id:galleryId, file_id:clear ? null : photo.dataset.imageId})});
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Your bookmark could not be saved.');
+    if (state.galleryId !== galleryId) return;
+    state.bookmark = data.bookmark;
+    message($('#bookmark-message'), clear ? 'Bookmark removed.' : 'Place saved. Use Go to bookmark when you return.');
+  } catch (error) { message($('#bookmark-message'), error.message, 'error'); }
+  finally { state.bookmarkBusy = false; updateRuler(); }
+}
+function jumpToBookmark() {
+  const card = [...gallery.querySelectorAll('.photo')].find(card => card.dataset.imageId === state.bookmark?.id);
+  if (!card) return;
+  card.scrollIntoView({block:'center', behavior:'instant'});
+  card.focus({preventScroll:true});
+  updateRuler();
+}
+$('#save-bookmark').addEventListener('click', () => saveBookmark());
+$('#ruler-save').addEventListener('click', () => saveBookmark());
+$('#clear-bookmark').addEventListener('click', () => saveBookmark(true));
+$('#jump-bookmark').addEventListener('click', jumpToBookmark);
+$('#ruler-bookmark').addEventListener('click', jumpToBookmark);
+let rulerFrame = false;
+function scheduleRuler() {
+  if (rulerFrame) return;
+  rulerFrame = true;
+  requestAnimationFrame(() => { rulerFrame = false; updateRuler(); });
+}
+window.addEventListener('scroll', scheduleRuler, {passive:true});
+window.addEventListener('resize', scheduleRuler);
+new ResizeObserver(scheduleRuler).observe(gallery);
