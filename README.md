@@ -52,6 +52,7 @@ Each row represents one email/folder pair and contains:
 
 - `email`, `gallery`, `date`, `folder_url`, `stage`, `process`
 - `saved` and `sent` JSONB arrays, each defaulting to `[]`
+- `bookmark` JSONB containing a photo reference or null (never TEXT)
 - `id`, `created_at`, and `updated_at`
 
 An email can have multiple galleries. Use `google` or `nord` for `process` and
@@ -61,6 +62,11 @@ The database stores photo references, not the image files:
 ```json
 [{"id":"provider-photo-id","name":"Portrait.jpg"}]
 ```
+
+For legacy databases with a TEXT bookmark column, run
+`docs/repair_bookmarks.sql` inside a transaction. It unwraps repeatedly encoded
+bookmarks and converts the column to JSONB while preserving saved/sent lists.
+Preview the conversion first; invalid bookmark references abort the repair.
 
 ```sql
 SELECT id, gallery, date, saved, sent

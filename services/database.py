@@ -1,5 +1,6 @@
 """PostgreSQL gallery records and durable selection carts."""
 import os
+import json
 import logging
 from contextlib import contextmanager
 
@@ -81,6 +82,25 @@ def access_for_email(email):
                                     stage=selection_stage(row['stage'], row['saved'], row['sent']), process=row['process']) for row in rows} or None
 
 
+def normalize_bookmark(value):
+    # Older databases used TEXT. Jsonb writes to TEXT were read back as strings
+    # and escaped again on every cart update, doubling the response size.
+    if isinstance(value, str) and value.strip('"\\ ').casefold() == 'null':
+        return None
+    for _ in range(64):
+        if not isinstance(value, str):
+            break
+        try:
+            value = json.loads(value)
+        except (ValueError, RecursionError) as exc:
+            raise RuntimeError('Your saved bookmark could not be read. Please contact Leanne.') from exc
+    if value is None:
+        return None
+    if isinstance(value, dict) and isinstance(value.get('id'), str) and isinstance(value.get('name'), str):
+        return {'id': value['id'], 'name': value['name']}
+    raise RuntimeError('Your saved bookmark could not be read. Please contact Leanne.')
+
+
 def read(email, folder_url):
     with connection() as conn:
         row = conn.execute(
@@ -89,6 +109,7 @@ def read(email, folder_url):
         ).fetchone()
     if row is None:
         raise RuntimeError('This gallery is no longer available. Please reopen your gallery.')
+    row['bookmark'] = normalize_bookmark(row['bookmark'])
     row['stage'] = selection_stage(row['stage'], row['saved'], row['sent'])
     return row
 
@@ -103,7 +124,7 @@ def transaction(email, folder_url):
         ).fetchone()
         if row is None:
             raise RuntimeError('This gallery is no longer available. Please reopen your gallery.')
-        state = dict(saved=row['saved'], sent=row['sent'], stage=row['stage'], bookmark=row['bookmark'])
+        state = dict(saved=row['saved'], sent=row['sent'], stage=row['stage'], bookmark=normalize_bookmark(row['bookmark']))
         yield state
         state['stage'] = selection_stage(state['stage'], state['saved'], state['sent'])
         conn.execute(

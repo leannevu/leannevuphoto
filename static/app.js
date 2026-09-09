@@ -17,6 +17,38 @@ const gallery = $("#gallery");
 const tray = $("#tray");
 const wait = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
 
+async function readApiResponse(response) {
+  let data;
+  try {
+    data = await response.json();
+  } catch {
+    throw new Error(`The server returned an incomplete or invalid response (HTTP ${response.status}). Please try again shortly.`);
+  }
+  if (!data || typeof data !== "object" || Array.isArray(data)) {
+    throw new Error("The server returned an invalid response. Please try again shortly.");
+  }
+  if (!response.ok) throw new Error(data.error || `The request failed (HTTP ${response.status}). Please try again shortly.`);
+  return data;
+}
+
+async function requestGallery(payload) {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    let response;
+    try {
+      response = await fetch("/api/gallery", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(payload)});
+      const data = await readApiResponse(response);
+      if (!Array.isArray(data.galleries) || (data.gallery && !Array.isArray(data.images))) {
+        throw new Error("The server returned incomplete gallery information. Please try again shortly.");
+      }
+      return data;
+    } catch (error) {
+      // Gallery loading is read-only; never retry selection or bookmark writes.
+      if (attempt || (response && !response.ok && ![502, 503, 504].includes(response.status))) throw error;
+      await wait(800);
+    }
+  }
+}
+
 async function animateWorkflow(stage) {
   const order = {choose_edits: 0, wait_for_edits: 1, final_edits: 2};
   const steps = [...document.querySelectorAll(".flow-step")];
@@ -200,8 +232,7 @@ async function mutateSelections(action, payload = {}) {
   message($("#selection-message"), action === "save" || action === "remove" ? "Saving your selection..." : "Updating your edit list...");
   try {
     const response = await fetch("/api/selections", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({email: state.email, gallery_id: state.galleryId, action, ...payload})});
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.error || "Your changes could not be saved.");
+    const data = await readApiResponse(response);
     applySelections(data.selections);
     reopenGallery = state.stage === "choose_edits" && $("#gallery-section").hidden;
     message($("#selection-message"), data.message, "success");
@@ -487,9 +518,7 @@ async function loadGallery(email, galleryId = "", chooseMore = false) {
   $("#progress-bar").style.width = "28%";
   button.firstElementChild.textContent = "Loading…";
   try {
-    const response = await fetch("/api/gallery", { method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({email, gallery_id: galleryId, choose_more: chooseMore}) });
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.error || "Could not load the gallery.");
+    const data = await requestGallery({email, gallery_id: galleryId, choose_more: chooseMore});
     if (!data.gallery) {
       state.email = email;
       state.galleries = data.galleries || [];
@@ -696,8 +725,7 @@ async function saveBookmark(clear = false) {
   updateRuler();
   try {
     const response = await fetch('/api/bookmark', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({email:state.email, gallery_id:galleryId, file_id:clear ? null : photo.dataset.imageId})});
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.error || 'Your bookmark could not be saved.');
+    const data = await readApiResponse(response);
     if (state.galleryId !== galleryId) return;
     state.bookmark = data.bookmark;
     message($('#bookmark-message'), clear ? 'Bookmark removed.' : 'Place saved. Use Go to bookmark when you return.');
