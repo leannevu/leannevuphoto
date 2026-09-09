@@ -390,6 +390,10 @@ function createLazyLoader({root = null, rootMargin = "150px", cardSelector = ".p
 }
 
 function renderGallery() {
+  $('#photo-number').value = '';
+  $('#photo-number').max = String(state.images.length);
+  $('#photo-number').removeAttribute('aria-invalid');
+  $('#photo-finder-message').textContent = `Enter a photo number from 1 to ${state.images.length} to view and select it.`;
   lazyLoader?.stop();
   lazyLoader = state.lazy ? createLazyLoader() : null;
   gallery.replaceChildren(...state.images.map((image, index) => {
@@ -659,6 +663,26 @@ document.addEventListener("keydown", (event) => {
   }
 });
 function isChosen(image) { return image && (state.selected.has(image.id) || (state.stage !== 'final_edits' && state.sent.has(image.id))); }
+$('#photo-finder').addEventListener('submit', event => {
+  event.preventDefault();
+  const input = $('#photo-number');
+  const number = Number(input.value);
+  if (!Number.isInteger(number) || number < 1 || number > state.images.length) {
+    input.setAttribute('aria-invalid', 'true');
+    $('#photo-finder-message').textContent = `Enter a whole photo number from 1 to ${state.images.length}.`;
+    input.focus();
+    return;
+  }
+  input.removeAttribute('aria-invalid');
+  state.page = 'full';
+  filmstripImages = null;
+  refreshGalleryPage();
+  $('#photo-finder-message').textContent = `Photo ${number}: ${state.images[number - 1].name}`;
+  const card = gallery.children[number - 1];
+  card.focus({preventScroll: true});
+  card.scrollIntoView({block: 'center', behavior: 'instant'});
+  updateRuler();
+});
 function stepLightbox(direction) {
   const indices = state.images.flatMap((image, index) => state.page === 'full' || isChosen(image) ? [index] : []);
   if (indices.length) openLightbox(indices[(indices.indexOf(state.lightboxIndex) + direction + indices.length) % indices.length]);

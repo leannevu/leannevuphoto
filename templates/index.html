@@ -71,6 +71,11 @@
         </div></div>
       </div>
       <nav class="gallery-pages" aria-label="Browse photographs"><button type="button" data-page="full" aria-pressed="true">Full gallery</button><button type="button" data-page="selected" aria-pressed="false">Selected photos</button></nav>
+      <form id="photo-finder" class="photo-finder" novalidate>
+        <label for="photo-number">Find photo by number</label>
+        <div class="photo-finder-controls"><input id="photo-number" type="number" min="1" step="1" inputmode="numeric" required placeholder="e.g. 25" aria-describedby="photo-finder-message"><button type="submit">Find photo</button></div>
+        <p id="photo-finder-message" role="status">Enter a photo's position in the full gallery.</p>
+      </form>
 <div id="bookmark-tools" class="bookmark-tools"><button id="save-bookmark" type="button">Bookmark this place</button><button id="jump-bookmark" type="button" hidden>Go to bookmark</button><button id="clear-bookmark" type="button" hidden>Unbookmark</button><span id="bookmark-message" role="status"></span></div>
 <p id="gallery-empty" hidden>No selected photos yet. Choose your favorites in the full gallery.</p>
 <div id="gallery" class="gallery"></div>

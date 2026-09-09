@@ -193,6 +193,14 @@ html:has(#lightbox[open]){overflow:hidden;scroll-behavior:auto}
   .lightbox-status{top:12px}.filmstrip-toggle{top:10px}.lightbox-close{top:7px}
 }
 .gallery-pages{display:flex;gap:24px;border-bottom:1px solid #ccc;margin-bottom:18px}
+.photo-finder{margin:0 0 22px;font-size:12px;max-width:420px}
+.photo-finder label{display:block;margin-bottom:8px;font-weight:600}
+.photo-finder-controls{display:flex;gap:8px}
+.photo-finder input{width:130px;min-width:0;min-height:44px;margin:0;padding:10px 12px;border:1px solid #bcbab6;border-radius:4px;background:transparent;color:inherit;font:inherit}
+.photo-finder button{min-height:44px;padding:10px 16px;border:1px solid #222;border-radius:4px;background:#222;color:#fff;font:inherit;cursor:pointer}
+.photo-finder p{margin:8px 0 0;color:#666;line-height:1.5}
+.photo-finder input[aria-invalid="true"]{border-color:#a32d20}
+.photo-finder input:focus-visible,.photo-finder button:focus-visible{outline:2px solid #555;outline-offset:3px}
 .gallery-pages button{background:none;border:0;border-bottom:2px solid transparent;padding:14px 0;color:#777;font:inherit;cursor:pointer}
 .gallery-pages button[aria-pressed="true"]{color:#222;border-color:#222}
 .bookmark-tools{display:flex;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:24px;font-size:12px}
