@@ -17,6 +17,7 @@
 
   <main>
     {% if photographer_mode %}
+    <a class="activity-link" href="/photographer/activity">View gallery activity ↗</a>
     <section id="owner-galleries" class="owner-panel"><p class="eyebrow">Leanne's workspace</p><h1>Photographer picks.</h1><p>Choose a gallery to select photographs and email your picks to yourself.</p><p id="owner-message" class="message" role="status">Loading galleries...</p><div id="owner-choices" class="gallery-choices"></div><button id="owner-retry" class="button dark" type="button" hidden>Try again</button></section>
     {% endif %}
     <section class="intro" id="intro">
@@ -28,6 +29,7 @@
         <button class="button dark" type="submit"><span>Open gallery</span><span aria-hidden="true">↗</span></button>
       </form>
       <p class="hint">Use the same email address you provided when your gallery was created.</p>
+      <p class="hint">Leanne can see when you open a gallery and whether you are currently viewing it.</p>
     </section>
 
     <div id="form-message" class="message form-message" role="status"></div>
@@ -132,6 +134,7 @@
     </div>
     <button id="lightbox-next" class="lightbox-nav next" aria-label="Next image">→</button>
   </dialog>
+  {% if not photographer_mode %}<script src="{{ url_for('static', filename='gallery-activity.js') }}"></script>{% endif %}
   <script src="{{ url_for('static', filename='app.js') }}"></script>
 </body>
 </html>

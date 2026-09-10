@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Gallery activity — Leanne Vu Photo</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='activity.css') }}">
+</head>
+<body class="activity-page">
+  <header class="nav"><a class="wordmark" href="/">LEANNE VU <span>PHOTO</span></a><a class="owner-link" href="/photographer">Photographer workspace ↗</a></header>
+  <main class="activity-main">
+    <div class="activity-heading"><div><p class="eyebrow">Leanne's workspace</p><h1>Gallery activity.</h1><p>See who has arrived and who is viewing a gallery right now.</p></div><div class="connection"><span id="connection-dot"></span><span id="connection-state" role="status">Connecting…</span></div></div>
+    <div class="activity-stats">
+      <article><p>Viewing now</p><strong id="active-count">—</strong><small>Active gallery tabs</small></article>
+      <article><p>Gallery arrivals</p><strong id="visit-count">—</strong><small>Last 7 days</small></article>
+      <article><p>Client emails</p><strong id="client-count">—</strong><small>Last 7 days</small></article>
+    </div>
+    <div class="activity-toolbar"><div class="activity-filters" role="group" aria-label="Visit filter"><button type="button" data-filter="all" aria-pressed="true">All arrivals</button><button type="button" data-filter="viewing" aria-pressed="false">Viewing now</button></div><label class="activity-search">Find a client or gallery<input id="activity-search" type="search" placeholder="Search name or email"></label></div>
+    <p id="activity-update" class="activity-update" role="status" aria-live="polite"></p>
+    <div class="activity-table-wrap"><table class="activity-table"><thead><tr><th scope="col">Client / gallery</th><th scope="col">Status</th><th scope="col">Arrived</th><th scope="col">Last check-in</th></tr></thead><tbody id="activity-rows"></tbody></table><p id="activity-empty">Loading gallery activity…</p></div>
+    <p id="activity-error" class="message error" role="alert" hidden></p>
+    <div class="activity-footer"><p id="activity-updated">Waiting for the first update.</p><button id="activity-refresh" type="button">Refresh now</button></div>
+    <p class="activity-note">Refreshes every 5 seconds. “Viewing now” means a visible, focused gallery tab checked in recently. Hidden tabs are marked away; disconnected visits stop showing as viewing within 45 seconds. Emails identify the gallery address entered by the visitor. No viewing duration is recorded.</p>
+    <p class="activity-note">Latest 200 arrivals from the last 7 days. New visits appear after this feature is deployed. Times use your device’s time zone.</p>
+  </main>
+  <script src="{{ url_for('static', filename='activity.js') }}"></script>
+</body>
+</html>

@@ -12,6 +12,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 import requests
+from services import activity_routes
 from services import selection_store
 from services import database as database_store
 from services.stages import selection_stage
@@ -601,6 +602,9 @@ def submit():
         return jsonify(error='The notification could not be sent. Your edit list has not changed. Please try again.'), 502
     except (OSError, RuntimeError) as exc:
         return jsonify(error=str(exc) or 'Your changes could not be saved. Please try again.'), 503
+
+
+activity_routes.register(app, client_folder_or_error, selected_folder)
 
 
 if __name__ == "__main__":

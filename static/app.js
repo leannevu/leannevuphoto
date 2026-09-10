@@ -460,6 +460,7 @@ function renderGallery() {
 function showGalleryPicker() {
   if (state.owner) { showOwnerGalleries().catch(showOwnerError); return; }
   if (state.busy) return;
+  window.galleryActivity?.stop();
   state.sent.clear();
   lazyLoader?.stop();
   state.selected.clear();
@@ -576,6 +577,7 @@ $('#other-picks-tab').hidden = !state.owner && data.gallery.photographer_picks !
     state.lazy = Boolean(data.lazy);
     state.email = email;
     lazyLoader?.stop();
+    window.galleryActivity?.open(email, state.galleryId);
     state.stage = data.stage;
     state.selected.clear();
     state.sent.clear();

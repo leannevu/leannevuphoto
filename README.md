@@ -89,6 +89,26 @@ Database row locks serialize updates. Failed email delivery leaves the stored
 list unchanged. A process crash between SMTP delivery and database commit can
 still require checking the latest list.
 
+### Gallery activity
+
+Open `/photographer/activity` using **View gallery activity** in the photographer
+workspace. It shows arrival timestamps, current viewing status, and a searchable
+list of the latest 200 visits in the last seven days. Summary counts cover all
+visits in that period. The page refreshes every five seconds; gallery tabs check
+in every 15 seconds. Hidden or unfocused tabs are away, and visits without a
+check-in for 45 seconds stop showing as viewing. Closing or leaving the gallery
+sends a best-effort final check-in. No viewing duration or click history is stored.
+Visits from the photographer workspace are excluded. Refreshing a client page
+and reopening its gallery creates a new arrival; choosing more edits in the same
+gallery keeps the existing visit.
+
+Visits identify the email entered for the gallery; this is not verified identity.
+The activity page follows the photographer workspace's direct-access setting:
+anyone with access to that page/API can see the visit list. No new Railway
+variables or services are needed. Apply `docs/gallery_activity.sql` once before
+deploying. Its separate `gallery_visits` table never updates gallery selections.
+Tracking begins with the updated website; past visits cannot be reconstructed.
+
 ### Photographer workspace
 
 Open `/photographer` or use **Photographer workspace**. It opens directly without
@@ -149,6 +169,7 @@ On this workstation, the ignored `.local/` directory provides:
 python .local/run.py tests
 python .local/run.py check_database
 python .local/run.py check_gallery_choices_ui
+python .local/run.py check_gallery_activity
 ```
 
 The database check rolls back all test data and mocks email delivery. The browser
