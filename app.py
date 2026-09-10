@@ -86,7 +86,7 @@ def gallery_config(folder_url, value):
     matches = google_url if process == 'google' else is_nordlocker_share(folder_url)
     if not matches:
         raise GalleryConfigurationError('The gallery link does not match its configured process (google or nord). Please contact Leanne.')
-    result = {'stage': stage, 'process': process}
+    result = {'stage': stage, 'process': process, 'photographer_picks': value.get('photographer_picks', 'no') if isinstance(value, dict) else 'no'}
     if isinstance(value, dict):
         result.update({key: str(value.get(key, '')).strip() for key in ('gallery', 'date')})
     return result
@@ -266,7 +266,7 @@ def list_images(folder_id: str) -> list[dict]:
             return images
 
 
-def send_selection_email(client_email: str, folder_url: str, files: list[dict], removed=None) -> None:
+def send_selection_email(client_email: str, folder_url: str, files: list[dict], removed=None, photographer=False) -> None:
     smtp_host = os.getenv("SMTP_HOST")
     smtp_user = os.getenv("SMTP_USER")
     smtp_password = os.getenv("SMTP_PASSWORD")
@@ -276,6 +276,8 @@ def send_selection_email(client_email: str, folder_url: str, files: list[dict], 
 
     message = EmailMessage()
     message["Subject"] = f"Photo edit selection — {len(files)} image{'s' if len(files) != 1 else ''}"
+    if photographer:
+        message.replace_header("Subject", f"Photographer picks — {len(files)} images")
     # Authenticated SMTP providers generally require From to match SMTP_USER.
     message["From"] = smtp_user
     message["To"] = recipient
@@ -286,7 +288,7 @@ def send_selection_email(client_email: str, folder_url: str, files: list[dict], 
     )
     changes = ('Removed from the edit list: ' + ', '.join(item['name'] for item in removed) + '\n\n') if removed else ''
     message.set_content(
-        f"A client updated their photo edit list. This complete list replaces previous selections for this gallery.\n\n"
+        ("Leanne selected these photographer picks. Client selections are unchanged.\n\n" if photographer else "A client updated their photo edit list. This complete list replaces previous selections for this gallery.\n\n") +
         f"{changes}"
         f"Client: {client_email}\nFolder: {folder_url}\n"
         f"Selected: {len(files)}\n\n{rows}"
@@ -305,9 +307,10 @@ def send_selection_email(client_email: str, folder_url: str, files: list[dict], 
             server.send_message(message)
 
 
+@app.get("/photographer")
 @app.get("/")
 def index():
-    return render_template("index.html")
+    return render_template("index.html", photographer_mode=request.path == "/photographer")
 
 
 @app.get("/health")
@@ -353,7 +356,7 @@ def nordlocker_photo(token):
 
 def gallery_choices(access):
     return [dict(id=share_fingerprint(url), gallery=config.get('gallery') or f'Gallery {index}',
-                 date=config.get('date', ''), stage=config['stage'])
+                 date=config.get('date', ''), stage=config['stage'], photographer_picks=config.get('photographer_picks', 'no'))
             for index, (url, value) in enumerate(access.items(), 1)
             for config in [gallery_config(url, value)]]
 
@@ -403,6 +406,9 @@ def gallery():
         selections = selection_state(client_email, folder_url, metadata['stage'])
     except (OSError, RuntimeError) as exc:
         return jsonify(error=str(exc)), 503
+    owner_mode = data.get('photographer_mode') is True
+    if owner_mode:
+        selections = dict(saved=selections.get('photographer_selected') or [], sent=[], stage='choose_edits', bookmark=None, client_saved=selections['saved'], client_sent=selections['sent'])
     stage = selections['stage']
     metadata['stage'] = stage
     if stage == "wait_for_edits" and not data.get('choose_more'):
@@ -452,6 +458,52 @@ def validated_selection_files(access, folder_url, files):
 def email_files(access, folder_url, files):
     nord = gallery_process(access, folder_url) == 'nord'
     return [dict(item, viewUrl=folder_url if nord else f"https://drive.google.com/file/d/{item['id']}/view") for item in files]
+
+
+@app.get('/api/photographer/galleries')
+def photographer_galleries():
+    if not database_store.enabled():
+        return jsonify(error='Photographer management requires PostgreSQL.'), 503
+    try:
+        return jsonify(galleries=[dict(id=share_fingerprint(row['folder_url']), email=row['email'], gallery=row['gallery'], date=str(row['date'] or ''), photographer_picks=row['photographer_picks']) for row in database_store.photographer_galleries()])
+    except RuntimeError as exc:
+        return jsonify(error=str(exc)), 503
+
+
+@app.post('/api/photographer/selections')
+def photographer_selections():
+    data = request.get_json(silent=True) or {}
+    email, access, error = client_folder_or_error(data)
+    if error:
+        return error
+    url = selected_folder(access, data.get('gallery_id'))
+    if not url or not database_store.enabled():
+        return jsonify(error='Choose an enabled photographer gallery.'), 400
+    action = data.get('action')
+    if action not in {'save', 'remove', 'send'}:
+        return jsonify(error='Choose a valid photographer action.'), 400
+    try:
+        files = validated_selection_files(access, url, data.get('files')) if action == 'save' else []
+        with database_store.photographer_transaction(email, url) as selections:
+            picks = {item['id']: item for item in selections['saved']}
+            if action == 'save':
+                picks.update({item['id']: item for item in files})
+            elif action == 'remove':
+                if not isinstance(data.get('file_id'), str):
+                    raise ValueError('Choose a photo to remove.')
+                picks.pop(data['file_id'], None)
+            elif action == 'send':
+                if not picks:
+                    raise ValueError('Choose photographs before emailing your picks.')
+                send_selection_email(email, url, email_files(access, url, list(picks.values())), photographer=True)
+            if len(picks) > 1000:
+                raise ValueError('Select at most 1000 photographer picks.')
+            selections['saved'] = list(picks.values())
+        return jsonify(selections=selections, message='Photographer picks emailed to Leanne.' if action == 'send' else 'Photographer picks saved.')
+    except ValueError as exc:
+        return jsonify(error=str(exc)), 400
+    except (OSError, RuntimeError, smtplib.SMTPException, requests.RequestException):
+        return jsonify(error='Photographer picks could not be updated. Please try again.'), 503
 
 
 @app.post('/api/bookmark')

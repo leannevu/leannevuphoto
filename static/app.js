@@ -1,8 +1,11 @@
 const state = { images: [], selected: new Map(), lightboxIndex: 0, stage: "choose_edits", lazy: false, email: "" };
+state.owner = document.body.dataset.photographer === "true";
+state.otherPicks = new Set();
 state.galleryId = "";
 state.galleries = [];
 state.sent = new Map();
 state.busy = false;
+state.loading = false;
 state.page = "full";
 state.bookmark = null;
 state.bookmarkBusy = false;
@@ -149,11 +152,11 @@ function applySelections(selections) {
 }
 
 function updateTray() {
-  const isFinal = state.stage === "final_edits";
+  const isFinal = state.stage === "final_edits" && !state.owner;
   const files = [...state.selected.values()];
   const sent = isFinal ? [] : [...state.sent.values()];
   $("#selected-count").textContent = files.length + sent.length;
-  tray.hidden = files.length + sent.length === 0;
+  tray.hidden = state.page === 'other' || files.length + sent.length === 0;
   function row(file, alreadySent) {
     const li = document.createElement("li");
     const name = document.createElement("span");
@@ -164,19 +167,25 @@ function updateTray() {
     button.setAttribute("aria-label", `${button.textContent} ${file.name}`);
     button.disabled = state.busy;
     button.addEventListener("click", () => alreadySent ? mutateSelections("unsend", {file_id: file.id}) : toggleSelection(file));
+    const preview = state.images.find(image => image.id === file.id);
+    if (preview?.thumbnail) {
+      const thumbnail = document.createElement('img');
+      thumbnail.src = preview.thumbnail; thumbnail.alt = ''; thumbnail.loading = 'lazy';
+      li.append(thumbnail);
+    }
     li.append(name, button);
     return li;
   }
   $("#selected-list").replaceChildren(...files.map(file => row(file, false)));
   $("#sent-list").replaceChildren(...sent.map(file => row(file, true)));
-  $("#saved-heading").textContent = isFinal ? "For download" : "Saved - not sent";
+  $("#saved-heading").textContent = isFinal ? "For download" : state.owner ? "Photographer picks · saved automatically" : "Saved drafts · not emailed";
   $("#saved-heading").hidden = files.length === 0;
   $("#sent-heading").hidden = sent.length === 0;
   $("#unsend-hint").hidden = sent.length === 0;
   $("#cart-choose-more").hidden = state.stage !== "wait_for_edits";
   $("#cart-choose-more").disabled = state.busy;
-  $("#selected-preview").textContent = isFinal ? "View download cart" : "View edit cart";
-  $("#submit-selection").textContent = isFinal ? "Download selected" : "Send saved selections";
+  $("#selected-preview").textContent = `${files.length} saved${state.owner || isFinal ? '' : ` · ${sent.length} sent`} · ${tray.classList.contains("open") ? 'Close cart' : 'Review cart'}`;
+  $("#submit-selection").textContent = isFinal ? "Download selected" : state.owner ? "Email my photographer picks" : "Email selections to Leanne";
   $("#submit-selection").hidden = files.length === 0;
   $("#submit-selection").disabled = state.busy;
 }
@@ -204,11 +213,13 @@ function updateSelectionUI(image) {
   }
   if (state.images[state.lightboxIndex]?.id === image.id) {
     const button = $("#lightbox-select");
+    button.hidden = state.page === "other";
     button.classList.toggle("selected", isSelected);
     button.disabled = state.busy;
     button.setAttribute("aria-pressed", String(isSelected));
     const status = $("#lightbox-status");
     status.textContent = isSent ? "SENT FOR EDITING" : isSelected ? "SELECTED" : "NOT SELECTED";
+    if (state.page === 'other') status.textContent = state.owner ? 'CLIENT PICK' : 'PHOTOGRAPHER PICK';
     status.dataset.status = isSent ? "sent" : isSelected ? "selected" : "unselected";
     button.firstChild.textContent = isSent ? "View sent photo in cart " : isSelected ? "Remove selection " : "Select photo ";
     button.querySelector("span").textContent = isSelected ? "\u2713" : "+";
@@ -225,19 +236,19 @@ function setSelectionBusy(busy) {
 }
 
 async function mutateSelections(action, payload = {}) {
-  if (state.busy) return;
+  if (state.busy || state.loading) return;
   setSelectionBusy(true);
   let reopenGallery = false;
   message($("#submit-message"));
   message($("#selection-message"), action === "save" || action === "remove" ? "Saving your selection..." : "Updating your edit list...");
   try {
-    const response = await fetch("/api/selections", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({email: state.email, gallery_id: state.galleryId, action, ...payload})});
+    const response = await fetch(state.owner ? "/api/photographer/selections" : "/api/selections", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({email: state.email, gallery_id: state.galleryId, action, ...payload})});
     const data = await readApiResponse(response);
     applySelections(data.selections);
     reopenGallery = state.stage === "choose_edits" && $("#gallery-section").hidden;
     message($("#selection-message"), data.message, "success");
     message($("#submit-message"), data.message, "success");
-    if (action === "send") {
+    if (action === "send" && !state.owner) {
       $("#lightbox").close();
       $("#gallery-section").hidden = true;
       $("#stage-message").hidden = false;
@@ -254,7 +265,7 @@ async function mutateSelections(action, payload = {}) {
 }
 
 function toggleSelection(image) {
-  if (state.busy) return;
+  if (state.busy || state.loading || state.page === "other") return;
   if (state.stage !== "final_edits" && state.sent.has(image.id)) {
     $("#lightbox").close();
     tray.classList.add("open");
@@ -310,7 +321,7 @@ function renderFilmstrip() {
   filmstripButtons.clear();
   const strip = $("#filmstrip");
   filmstripLoader = createLazyLoader({root: strip, rootMargin: "80px", cardSelector: ".filmstrip-thumb"});
-  strip.replaceChildren(...state.images.map((image, index) => ({image, index})).filter(({image}) => state.page === "full" || isChosen(image)).map(({image, index}) => {
+  strip.replaceChildren(...state.images.map((image, index) => ({image, index})).filter(({image}) => visibleOnPage(image)).map(({image, index}) => {
     const button = document.createElement("button");
     button.type = "button";
     button.className = "filmstrip-thumb";
@@ -447,6 +458,7 @@ function renderGallery() {
 }
 
 function showGalleryPicker() {
+  if (state.owner) { showOwnerGalleries().catch(showOwnerError); return; }
   if (state.busy) return;
   state.sent.clear();
   lazyLoader?.stop();
@@ -512,7 +524,8 @@ $("#choose-more").addEventListener("click", chooseMoreEdits);
 $("#cart-choose-more").addEventListener("click", chooseMoreEdits);
 
 async function loadGallery(email, galleryId = "", chooseMore = false) {
-  if (state.busy) return;
+  if (state.busy || state.loading) return;
+  state.loading = true;
   message($("#form-message"));
   const button = form.querySelector("button");
   button.disabled = true;
@@ -522,7 +535,7 @@ async function loadGallery(email, galleryId = "", chooseMore = false) {
   $("#progress-bar").style.width = "28%";
   button.firstElementChild.textContent = "Loading…";
   try {
-    const data = await requestGallery({email, gallery_id: galleryId, choose_more: chooseMore});
+    const data = await requestGallery({email, gallery_id: galleryId, choose_more: chooseMore, photographer_mode: state.owner});
     if (!data.gallery) {
       state.email = email;
       state.galleries = data.galleries || [];
@@ -532,13 +545,19 @@ async function loadGallery(email, galleryId = "", chooseMore = false) {
     if (!data.lazy) await preloadGallery(data.images);
     state.galleries = data.galleries || [];
     state.galleryId = data.gallery.id;
+    state.otherPicks = new Set((state.owner ? [...(data.selections?.client_saved || []), ...(data.selections?.client_sent || [])] : data.selections?.photographer_selected || []).map(file => file.id));
+$('#other-picks-tab').hidden = !state.owner && data.gallery.photographer_picks !== 'yes';
+    $('#waiting-photographer').hidden = state.owner || data.gallery.photographer_picks !== 'yes';
+    $('#other-picks-tab').textContent = state.owner ? 'Client picks' : 'Photographer picks';
+    document.querySelector('[data-page="selected"]').textContent = state.owner ? 'My photographer picks' : 'My selected photos';
+    $('#change-gallery').textContent = state.owner ? 'Choose another client gallery' : 'Choose another gallery';
     tray.classList.remove("open");
     $("#tray-toggle").setAttribute("aria-expanded", "false");
     $("#gallery-picker").hidden = true;
     $("#welcome-title").textContent = data.gallery.gallery;
     $("#welcome-date").textContent = data.gallery.date;
     $("#welcome-date").hidden = !data.gallery.date;
-    $("#change-gallery").hidden = state.galleries.length < 2;
+    $("#change-gallery").hidden = !state.owner && state.galleries.length < 2;
     message($("#submit-message"));
     gallery.classList.remove("list-view");
     document.querySelectorAll("#view-toggle button").forEach(item => {
@@ -570,6 +589,7 @@ async function loadGallery(email, galleryId = "", chooseMore = false) {
     $("#view-gallery").hidden = waiting;
     $("#gallery-section").hidden = true;
     await animateWorkflow(data.stage);
+    $(".flow").hidden = state.owner;
     if (data.stage === "wait_for_edits" && !chooseMore) {
       $("#gallery-section").hidden = true;
       $("#stage-message").hidden = false;
@@ -581,7 +601,7 @@ async function loadGallery(email, galleryId = "", chooseMore = false) {
     updateTray();
     const isFinal = data.stage === "final_edits";
     $("#gallery-eyebrow").textContent = isFinal ? "Your finished gallery" : "Your proofs";
-    $("#gallery-title").textContent = isFinal ? "Your final photographs." : "Choose your favorites.";
+    $("#gallery-title").textContent = isFinal ? "Your final photographs." : state.owner ? "Choose your photographer picks." : "Choose your favorites.";
     $("#view-toggle").hidden = false;
     $("#gallery-count").textContent = `${data.count} photograph${data.count === 1 ? "" : "s"}`;
     $("#gallery-section").hidden = false;
@@ -591,6 +611,7 @@ async function loadGallery(email, galleryId = "", chooseMore = false) {
     message($("#form-message"), error.message, "error");
     $("#form-message").scrollIntoView({behavior: "smooth", block: "center"});
   } finally {
+    state.loading = false;
     $("#loader").hidden = true;
     $("#progress-bar").style.width = "0";
     document.body.classList.remove("gallery-loading");
@@ -602,6 +623,7 @@ async function loadGallery(email, galleryId = "", chooseMore = false) {
 $("#tray-toggle").addEventListener("click", () => {
   tray.classList.toggle("open");
   $("#tray-toggle").setAttribute("aria-expanded", tray.classList.contains("open"));
+  updateTray();
 });
 $("#submit-selection").addEventListener("click", async () => {
   const button = $("#submit-selection");
@@ -684,18 +706,24 @@ $('#photo-finder').addEventListener('submit', event => {
   updateRuler();
 });
 function stepLightbox(direction) {
-  const indices = state.images.flatMap((image, index) => state.page === 'full' || isChosen(image) ? [index] : []);
+  const indices = state.images.flatMap((image, index) => visibleOnPage(image) ? [index] : []);
   if (indices.length) openLightbox(indices[(indices.indexOf(state.lightboxIndex) + direction + indices.length) % indices.length]);
 }
 function refreshGalleryPage() {
+  gallery.classList.toggle('viewing-other', state.page === 'other');
+  updateTray();
   let count = 0;
   gallery.querySelectorAll('.photo').forEach(card => {
     const chosen = state.selected.has(card.dataset.imageId) || (state.stage !== 'final_edits' && state.sent.has(card.dataset.imageId));
     if (chosen) count++;
-    card.hidden = state.page === 'selected' && !chosen;
+    card.hidden = state.page === 'selected' ? !chosen : state.page === 'other' ? !state.otherPicks.has(card.dataset.imageId) : false;
+    card.querySelector('.select-button').hidden = state.page === 'other';
   });
-  $('#gallery-empty').hidden = state.page !== 'selected' || count > 0;
-  $('#bookmark-tools').hidden = state.page !== 'full';
+  $('#gallery-empty').hidden = state.page === 'full' || [...gallery.children].some(card => !card.hidden);
+  $('#gallery-empty').textContent = state.page === 'other' ? (state.owner ? 'No client picks yet.' : 'Leanne has not selected photographer picks yet.') : 'No selected photos yet. Choose your favorites in the full gallery.';
+  $('#picks-description').hidden = state.page !== 'other';
+  $('#picks-description').textContent = state.owner ? 'Your client’s saved and sent selections. Your photographer picks are kept separately.' : 'Selected by Leanne. Your own selections are kept separately.';
+  $('#bookmark-tools').hidden = state.owner || state.page !== 'full';
   document.querySelectorAll('[data-page]').forEach(button => button.setAttribute('aria-pressed', String(button.dataset.page === state.page)));
   if (state.page === 'selected' && $('#lightbox').open) {
     filmstripImages = null;
@@ -720,7 +748,7 @@ function currentGalleryPhoto() {
 }
 function updateRuler() {
   const section = $('#gallery-section'), bounds = section.getBoundingClientRect();
-  $('#gallery-ruler').hidden = section.hidden || state.page !== 'full' || !state.images.length || bounds.top > innerHeight * .4 || bounds.bottom < 100;
+  $('#gallery-ruler').hidden = state.owner || section.hidden || state.page !== 'full' || !state.images.length || bounds.top > innerHeight * .4 || bounds.bottom < 100;
   const current = currentGalleryPhoto();
   const index = state.images.findIndex(image => image.id === current?.dataset.imageId);
   const percent = index < 0 ? 0 : (index + 1) / state.images.length * 100;
@@ -732,10 +760,10 @@ function updateRuler() {
   $('#clear-bookmark').hidden = !state.bookmark;
   $('#ruler-bookmark').hidden = markIndex < 0;
   $('#ruler-bookmark').style.top = `${(markIndex + 1) / Math.max(1, state.images.length) * 100}%`;
-  $('#jump-bookmark').textContent = `Go to bookmark - Photo ${markIndex + 1}`;
+  $('#jump-bookmark').textContent = `Resume at photo ${markIndex + 1}`;
   const atBookmark = markIndex >= 0 && current?.dataset.imageId === state.bookmark.id;
-  $('#save-bookmark').textContent = atBookmark ? 'Place bookmarked' : state.bookmark ? 'Move bookmark here' : 'Bookmark this place';
-  $('#ruler-save').textContent = atBookmark ? 'B' : '+';
+  $('#save-bookmark').textContent = atBookmark ? 'Position saved' : `Save position · photo ${Math.max(1, index + 1)}`;
+  $('#ruler-save').textContent = atBookmark ? '✓' : '↧';
   ['#save-bookmark', '#ruler-save'].forEach(id => $(id).disabled = state.bookmarkBusy || !current || atBookmark);
   $('#clear-bookmark').disabled = state.bookmarkBusy;
   gallery.querySelectorAll('.photo').forEach(card => card.classList.toggle('bookmarked', card.dataset.imageId === state.bookmark?.id));
@@ -752,7 +780,7 @@ async function saveBookmark(clear = false) {
     const data = await readApiResponse(response);
     if (state.galleryId !== galleryId) return;
     state.bookmark = data.bookmark;
-    message($('#bookmark-message'), clear ? 'Bookmark removed.' : 'Place saved. Use Go to bookmark when you return.');
+    message($('#bookmark-message'), clear ? 'Saved position cleared.' : 'Position saved. Use Resume when you return.');
   } catch (error) { message($('#bookmark-message'), error.message, 'error'); }
   finally { state.bookmarkBusy = false; updateRuler(); }
 }
@@ -777,3 +805,50 @@ function scheduleRuler() {
 window.addEventListener('scroll', scheduleRuler, {passive:true});
 window.addEventListener('resize', scheduleRuler);
 new ResizeObserver(scheduleRuler).observe(gallery);
+
+function visibleOnPage(image) {
+  return state.page === 'full' || (state.page === 'other' ? state.otherPicks.has(image.id) : isChosen(image));
+}
+$('#waiting-photographer').addEventListener('click', async () => {
+  if (state.busy) return;
+  await loadGallery(state.email, state.galleryId, true);
+  state.page = 'other';
+  filmstripImages = null;
+  refreshGalleryPage();
+  scrollToGallery();
+});
+async function showOwnerGalleries() {
+  if (state.busy) return;
+  const data = await readApiResponse(await fetch('/api/photographer/galleries'));
+  message($('#owner-message'));
+  $('#owner-retry').hidden = true;
+  $('#owner-galleries').hidden = false;
+  $('#client-space').hidden = true;
+  $('#gallery-section').hidden = true;
+  tray.hidden = true;
+  $('#owner-choices').replaceChildren(...data.galleries.map(item => {
+    const button = document.createElement('button');
+    button.type = 'button'; button.className = 'gallery-choice';
+    const title = document.createElement('span'); title.className = 'choice-title';
+    title.textContent = item.gallery;
+    const detail = document.createElement('span'); detail.className = 'choice-date';
+    detail.textContent = `${item.email} · ${item.date}${item.photographer_picks === 'yes' ? '' : ' · Photographer picks disabled'}`;
+    button.append(title, detail);
+    button.disabled = item.photographer_picks !== 'yes';
+    button.addEventListener('click', async () => {
+      $('#owner-galleries').hidden = true;
+      await loadGallery(item.email, item.id, true);
+    });
+    return button;
+  }));
+}
+function showOwnerError(error) {
+  $('#owner-galleries').hidden = false;
+  message($('#owner-message'), error.message, 'error');
+  $('#owner-retry').hidden = false;
+}
+if (state.owner) {
+  $('#intro').hidden = true;
+  $('#owner-retry').addEventListener('click', () => showOwnerGalleries().catch(showOwnerError));
+  showOwnerGalleries().catch(showOwnerError);
+}

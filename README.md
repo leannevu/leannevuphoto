@@ -53,6 +53,9 @@ Each row represents one email/folder pair and contains:
 - `email`, `gallery`, `date`, `folder_url`, `stage`, `process`
 - `saved` and `sent` JSONB arrays, each defaulting to `[]`
 - `bookmark` JSONB containing a photo reference or null (never TEXT)
+- `photographer_picks` is `yes` or `no` (default `no`)
+- `photographer_selected` is a separate JSONB photo list, or SQL NULL when empty;
+  it must be NULL when photographer picks are disabled
 - `id`, `created_at`, and `updated_at`
 
 An email can have multiple galleries. Use `google` or `nord` for `process` and
@@ -85,6 +88,28 @@ it cannot recall earlier email. A completed gallery cannot change edit requests.
 Database row locks serialize updates. Failed email delivery leaves the stored
 list unchanged. A process crash between SMTP delivery and database commit can
 still require checking the latest list.
+
+### Photographer workspace
+
+Open `/photographer` or use **Photographer workspace**. It opens directly without
+sign-in or email verification. Anyone who can access the workspace or its API
+can view the client gallery list and change enabled photographer picks.
+SMTP is used only when sending selections, not for workspace access.
+
+Leanne can select photos in enabled galleries, see a read-only **Client picks**
+tab (saved and sent), and **Email my photographer picks** to herself. Photographer
+picks save immediately and clients see them in a read-only **Photographer picks**
+tab, including while awaiting edits. Emailing these picks never changes the
+client's saved/sent lists, stage, or bookmark. Client email notifications continue
+as before. The cart shows photo previews and distinguishes drafts from sent picks.
+**Save position** stores a single reading position separately from photo selections.
+
+For existing databases, back up `public.emails`, then apply
+`docs/photographer_picks.sql` in a transaction before deploying this code. It adds
+only the two photographer columns and enables Socheata's two galleries; all
+other galleries default to `no`. No existing client columns are rewritten.
+The populated database was migrated with a private local backup and an exact
+comparison of every original row value before commit.
 
 The `data/` folder is not needed with PostgreSQL. Historical CSV import tools
 are kept locally under `.local/archive/`.

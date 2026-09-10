@@ -9,13 +9,16 @@
   <link href="https://fonts.googleapis.com/css2?family=Allura&family=DM+Sans:wght@400;500;600&family=Libre+Caslon+Display&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
-<body>
+<body data-photographer="{{ 'true' if photographer_mode else 'false' }}">
   <header class="nav">
     <a class="wordmark" href="/">LEANNE VU <span>PHOTO</span></a>
-    <div class="nav-note">CLIENT PROOFING · 2026</div>
+    <a class="owner-link" href="{{ '/' if photographer_mode else '/photographer' }}">{{ 'Client galleries' if photographer_mode else 'Photographer workspace' }}</a><div class="nav-note">CLIENT PROOFING · 2026</div>
   </header>
 
   <main>
+    {% if photographer_mode %}
+    <section id="owner-galleries" class="owner-panel"><p class="eyebrow">Leanne's workspace</p><h1>Photographer picks.</h1><p>Choose a gallery to select photographs and email your picks to yourself.</p><p id="owner-message" class="message" role="status">Loading galleries...</p><div id="owner-choices" class="gallery-choices"></div><button id="owner-retry" class="button dark" type="button" hidden>Try again</button></section>
+    {% endif %}
     <section class="intro" id="intro">
       <p class="eyebrow">A simple place to choose</p>
       <h1>Your photographs,<br>from proof to final.</h1>
@@ -59,6 +62,7 @@
         <h2>Your selections are being edited.</h2>
         <p>I’ll let you know as soon as your finished photographs are ready here.</p>
         <button id="choose-more" class="button dark choose-more" type="button">Choose more edits</button>
+        <button id="waiting-photographer" class="button dark choose-more" type="button" hidden>View photographer picks</button>
       </div>
     </section>
 
@@ -70,21 +74,22 @@
           <button class="active" data-view="grid" type="button" aria-label="Grid view" aria-pressed="true" title="Grid view"><span class="view-check" aria-hidden="true">&#10003;</span><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 3h5v5H3zM12 3h5v5h-5zM3 12h5v5H3zM12 12h5v5h-5z"/></svg></button>
         </div></div>
       </div>
-      <nav class="gallery-pages" aria-label="Browse photographs"><button type="button" data-page="full" aria-pressed="true">Full gallery</button><button type="button" data-page="selected" aria-pressed="false">Selected photos</button></nav>
+      <nav class="gallery-pages" aria-label="Browse photographs"><button type="button" data-page="full" aria-pressed="true">Full gallery</button><button type="button" data-page="selected" aria-pressed="false">Selected photos</button><button id="other-picks-tab" type="button" data-page="other" aria-pressed="false" hidden>Photographer picks</button></nav>
+      <p id="picks-description" class="hint" hidden></p>
       <form id="photo-finder" class="photo-finder" novalidate>
         <label for="photo-number">Find photo by number</label>
         <div class="photo-finder-controls"><input id="photo-number" type="number" min="1" step="1" inputmode="numeric" required placeholder="e.g. 25" aria-describedby="photo-finder-message"><button type="submit">Find photo</button></div>
         <p id="photo-finder-message" role="status">Enter a photo's position in the full gallery.</p>
       </form>
-<div id="bookmark-tools" class="bookmark-tools"><button id="save-bookmark" type="button">Bookmark this place</button><button id="jump-bookmark" type="button" hidden>Go to bookmark</button><button id="clear-bookmark" type="button" hidden>Unbookmark</button><span id="bookmark-message" role="status"></span></div>
+<div id="bookmark-tools" class="bookmark-tools"><span class="bookmark-label">Reading position <small>Save one place to continue later. This does not select a photo.</small></span><button id="save-bookmark" type="button">Save my place</button><button id="jump-bookmark" type="button" hidden>Resume here</button><button id="clear-bookmark" type="button" hidden>Clear position</button><span id="bookmark-message" role="status"></span></div>
 <p id="gallery-empty" hidden>No selected photos yet. Choose your favorites in the full gallery.</p>
 <div id="gallery" class="gallery"></div>
-<aside id="gallery-ruler" hidden aria-label="Your place in the gallery"><span id="ruler-count"></span><div class="ruler-track" role="progressbar" aria-label="Gallery progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span id="ruler-progress"></span><button id="ruler-bookmark" type="button" hidden title="Go to bookmark" aria-label="Go to bookmarked photo">B</button></div><button id="ruler-save" type="button" aria-label="Bookmark this place" title="Bookmark this place">+</button></aside>
+<aside id="gallery-ruler" hidden aria-label="Your place in the gallery"><span id="ruler-count"></span><div class="ruler-track" role="progressbar" aria-label="Gallery progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span id="ruler-progress"></span><button id="ruler-bookmark" type="button" hidden title="Resume at saved position" aria-label="Resume at saved position">↩</button></div><button id="ruler-save" type="button" aria-label="Save my place" title="Save my place">↧</button></aside>
     </section>
   </main>
 
   <aside id="tray" class="tray" hidden>
-    <button id="tray-toggle" class="tray-summary" type="button" aria-expanded="false">
+    <button id="tray-toggle" class="tray-summary" type="button" aria-expanded="false" aria-controls="tray-detail">
       <span><strong id="selected-count">0</strong> selected</span>
       <span id="selected-preview">View filenames</span>
     </button>
