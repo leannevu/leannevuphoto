@@ -1,4 +1,4 @@
-"""Activity APIs; monitoring follows the direct-access photographer workspace."""
+"""Activity APIs; photographer monitoring is protected by the app auth guard."""
 from flask import Blueprint, jsonify, request, render_template
 from . import activity, database
 

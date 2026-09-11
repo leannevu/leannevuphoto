@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Photographer sign in — Leanne Vu Photo</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <header class="nav"><a class="wordmark" href="/">LEANNE VU <span>PHOTO</span></a><a class="owner-link" href="/">Client galleries</a></header>
+  <main><section class="intro">
+    <p class="eyebrow">Leanne's workspace</p><h1>Photographer sign in.</h1>
+    <p class="lede">Verify leannevuphoto@gmail.com to open your workspace.</p>
+    <form class="load-form" method="post">
+      <input type="hidden" name="csrf" value="{{ session.get('login_csrf', '') }}">
+      <input type="hidden" name="action" value="send">
+      <label>Email address<input name="email" type="email" required autocomplete="email" value="leannevuphoto@gmail.com"></label>
+      <button class="button dark" type="submit">Email sign-in code</button>
+    </form>
+    {% if session.get('login_challenge') %}
+    <form class="load-form" method="post">
+      <input type="hidden" name="csrf" value="{{ session.get('login_csrf', '') }}">
+      <input type="hidden" name="action" value="verify">
+      <label>Sign-in code<input name="code" required autocomplete="one-time-code" maxlength="12" autofocus></label>
+      <button class="button dark" type="submit">Open workspace</button>
+    </form>
+    {% endif %}
+    <p role="status">{{ notice }}</p><p class="message error" role="alert">{{ error }}</p>
+  </section></main>
+</body>
+</html>

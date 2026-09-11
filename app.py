@@ -13,6 +13,7 @@ from urllib.parse import urlsplit
 
 import requests
 from services import activity_routes
+from services import photographer_auth
 from services import selection_store
 from services import database as database_store
 from services.stages import selection_stage
@@ -25,6 +26,7 @@ load_dotenv()
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 1 * 1024 * 1024
+photographer_auth.register(app)
 photo_tokens = URLSafeTimedSerializer(os.getenv('SECRET_KEY') or os.urandom(32), salt='nordlocker-photos')
 
 FOLDER_PATTERNS = (

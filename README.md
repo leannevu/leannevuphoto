@@ -103,18 +103,24 @@ and reopening its gallery creates a new arrival; choosing more edits in the same
 gallery keeps the existing visit.
 
 Visits identify the email entered for the gallery; this is not verified identity.
-The activity page follows the photographer workspace's direct-access setting:
-anyone with access to that page/API can see the visit list. No new Railway
+The activity page and its API require the verified photographer session. No new Railway
 variables or services are needed. Apply `docs/gallery_activity.sql` once before
 deploying. Its separate `gallery_visits` table never updates gallery selections.
 Tracking begins with the updated website; past visits cannot be reconstructed.
 
 ### Photographer workspace
 
-Open `/photographer` or use **Photographer workspace**. It opens directly without
-sign-in or email verification. Anyone who can access the workspace or its API
-can view the client gallery list and change enabled photographer picks.
-SMTP is used only when sending selections, not for workspace access.
+Open `/photographer` or use **Photographer workspace**. Only
+`leannevuphoto@gmail.com` can sign in, using a code delivered to that mailbox
+through the existing SMTP settings. Codes expire after ten minutes, allow five
+attempts, and can be requested once per minute. A new code replaces the previous
+code. Sessions expire after eight hours and can be ended with **Sign out**.
+The gallery list, activity page/API, photographer selections, and photographer
+mode on the gallery API all require this session.
+Keep `SECRET_KEY` persistent. Railway sessions use HTTPS-only cookies.
+Pending codes are held in memory under the existing single-worker deployment;
+restarting the worker requires requesting a new code. SMTP must be configured
+for sign-in as well as selection emails.
 
 Leanne can select photos in enabled galleries, see a read-only **Client picks**
 tab (saved and sent), and **Email my photographer picks** to herself. Photographer

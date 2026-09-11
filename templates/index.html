@@ -17,6 +17,7 @@
 
   <main>
     {% if photographer_mode %}
+    <form action="/photographer/logout" method="post"><input type="hidden" name="csrf" value="{{ session.get('logout_csrf', '') }}"><button class="button" type="submit">Sign out</button></form>
     <a class="activity-link" href="/photographer/activity">View gallery activity ↗</a>
     <section id="owner-galleries" class="owner-panel"><p class="eyebrow">Leanne's workspace</p><h1>Photographer picks.</h1><p>Choose a gallery to select photographs and email your picks to yourself.</p><p id="owner-message" class="message" role="status">Loading galleries...</p><div id="owner-choices" class="gallery-choices"></div><button id="owner-retry" class="button dark" type="button" hidden>Try again</button></section>
     {% endif %}
