@@ -103,24 +103,22 @@ and reopening its gallery creates a new arrival; choosing more edits in the same
 gallery keeps the existing visit.
 
 Visits identify the email entered for the gallery; this is not verified identity.
-The activity page and its API require the verified photographer session. No new Railway
+The activity page and its API require the photographer session. No new Railway
 variables or services are needed. Apply `docs/gallery_activity.sql` once before
 deploying. Its separate `gallery_visits` table never updates gallery selections.
 Tracking begins with the updated website; past visits cannot be reconstructed.
 
 ### Photographer workspace
 
-Open `/photographer` or use **Photographer workspace**. Only
-`leannevuphoto@gmail.com` can sign in, using a code delivered to that mailbox
-through the existing SMTP settings. Codes expire after ten minutes, allow five
-attempts, and can be requested once per minute. A new code replaces the previous
-code. Sessions expire after eight hours and can be ended with **Sign out**.
+Use the same home-page email field for both clients and the photographer.
+Entering `leannevuphoto@gmail.com` opens `/photographer`; other addresses open
+their assigned client galleries. No verification email or separate sign-in is
+required. This is email-based routing, not identity verification: anyone who
+enters the photographer address can access the workspace.
 The gallery list, activity page/API, photographer selections, and photographer
-mode on the gallery API all require this session.
-Keep `SECRET_KEY` persistent. Railway sessions use HTTPS-only cookies.
-Pending codes are held in memory under the existing single-worker deployment;
-restarting the worker requires requesting a new code. SMTP must be configured
-for sign-in as well as selection emails.
+mode on the gallery API require the resulting eight-hour session. Direct visits
+without that session return to the home-page email field. SMTP is used only for
+selection emails. Keep `SECRET_KEY` persistent across server restarts.
 
 Leanne can select photos in enabled galleries, see a read-only **Client picks**
 tab (saved and sent), and **Email my photographer picks** to herself. Photographer

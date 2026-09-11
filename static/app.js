@@ -537,6 +537,10 @@ async function loadGallery(email, galleryId = "", chooseMore = false) {
   button.firstElementChild.textContent = "Loading…";
   try {
     const data = await requestGallery({email, gallery_id: galleryId, choose_more: chooseMore, photographer_mode: state.owner});
+    if (data.redirect === '/photographer') {
+      window.location.assign(data.redirect);
+      return;
+    }
     if (!data.gallery) {
       state.email = email;
       state.galleries = data.galleries || [];

@@ -395,6 +395,10 @@ def selection_state(email, folder_url, configured_stage):
 @app.post("/api/gallery")
 def gallery():
     data = request.get_json(silent=True) or {}
+    if isinstance(data, dict) and not data.get('photographer_mode'):
+        workspace = photographer_auth.open_workspace(data.get('email', ''))
+        if workspace is not None:
+            return workspace
     client_email, access, error_response = client_folder_or_error(data)
     if error_response:
         return error_response
