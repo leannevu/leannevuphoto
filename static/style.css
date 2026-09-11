@@ -251,3 +251,5 @@ html:has(#lightbox[open]){overflow:hidden;scroll-behavior:auto}
 .flow[hidden],#owner-retry[hidden]{display:none}
 .gallery-choice:disabled{opacity:.5;cursor:default}
 @media(max-width:760px){.bookmark-label{flex-basis:100%}.owner-link{margin-right:0;font-size:11px}.tray-detail{padding:16px}.gallery-pages{gap:16px}.tray-summary{padding:16px}.owner-panel{margin:24px auto}}
+.selection-copy-tools { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 18px; }
+#copy-photos-fallback { width: 100%; min-height: 90px; margin-bottom: 18px; }

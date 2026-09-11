@@ -78,6 +78,16 @@
       </div>
       <nav class="gallery-pages" aria-label="Browse photographs"><button type="button" data-page="full" aria-pressed="true">Full gallery</button><button type="button" data-page="selected" aria-pressed="false">Selected photos</button><button id="other-picks-tab" type="button" data-page="other" aria-pressed="false" hidden>Photographer picks</button></nav>
       <p id="picks-description" class="hint" hidden></p>
+      {% if photographer_mode %}
+      <div class="selection-copy-tools">
+        <button id="copy-client-photos" class="button dark" type="button">Get client's selected photos</button>
+        <button id="copy-client-sent" class="button dark" type="button">Get client's sent filenames</button>
+        <button id="copy-my-photos" class="button dark" type="button">Get my selected photos</button>
+      </div>
+      <p class="hint">Client selections include saved and sent photos.</p>
+      <p id="copy-photos-message" role="status" aria-live="polite"></p>
+      <textarea id="copy-photos-fallback" aria-label="Selected photo filenames to copy" readonly hidden></textarea>
+      {% endif %}
       <form id="photo-finder" class="photo-finder" novalidate>
         <label for="photo-number">Find photo by number</label>
         <div class="photo-finder-controls"><input id="photo-number" type="number" min="1" step="1" inputmode="numeric" required placeholder="e.g. 25" aria-describedby="photo-finder-message"><button type="submit">Find photo</button></div>
@@ -135,6 +145,6 @@
     <button id="lightbox-next" class="lightbox-nav next" aria-label="Next image">→</button>
   </dialog>
   {% if not photographer_mode %}<script src="{{ url_for('static', filename='gallery-activity.js') }}"></script>{% endif %}
-  <script src="{{ url_for('static', filename='app.js') }}"></script>
+  <script src="{{ url_for('static', filename='app.js', v=app_js_version) }}"></script>
 </body>
 </html>

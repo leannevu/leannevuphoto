@@ -25,6 +25,7 @@ from services.nordlocker import bridge, NordLockerError
 load_dotenv()
 
 app = Flask(__name__)
+APP_JS_VERSION = hashlib.sha256((Path(__file__).resolve().parent / 'static' / 'app.js').read_bytes()).hexdigest()[:12]
 app.config["MAX_CONTENT_LENGTH"] = 1 * 1024 * 1024
 photographer_auth.register(app)
 photo_tokens = URLSafeTimedSerializer(os.getenv('SECRET_KEY') or os.urandom(32), salt='nordlocker-photos')
@@ -269,11 +270,11 @@ def list_images(folder_id: str) -> list[dict]:
             return images
 
 
-def send_selection_email(client_email: str, folder_url: str, files: list[dict], removed=None, photographer=False) -> None:
+def send_selection_email(client_email: str, folder_url: str, files: list[dict], removed=None, photographer=False, added=None) -> None:
     smtp_host = os.getenv("SMTP_HOST")
     smtp_user = os.getenv("SMTP_USER")
     smtp_password = os.getenv("SMTP_PASSWORD")
-    recipient = os.getenv("PORTFOLIO_OWNER_EMAIL")
+    recipient = photographer_auth.OWNER_EMAIL
     if not all((smtp_host, smtp_user, smtp_password, recipient)):
         raise RuntimeError("Email delivery is not configured yet.")
 
@@ -285,16 +286,20 @@ def send_selection_email(client_email: str, folder_url: str, files: list[dict], 
     message["From"] = smtp_user
     message["To"] = recipient
     message["Reply-To"] = client_email
-    rows = "\n".join(
-        f"{index}. {item['name']}\n   {item['viewUrl']}"
-        for index, item in enumerate(files, 1)
+    def names(items):
+        return '[' + ', '.join(item['name'] for item in items) + ']'
+
+    added, removed = added or [], removed or []
+    changes = '' if photographer else (
+        f'Update: {len(added)} added, {len(removed)} removed.\n\n'
+        f'Added ({len(added)}): {names(added)}\n'
+        f'Removed ({len(removed)}): {names(removed)}\n\n'
     )
-    changes = ('Removed from the edit list: ' + ', '.join(item['name'] for item in removed) + '\n\n') if removed else ''
     message.set_content(
         ("Leanne selected these photographer picks. Client selections are unchanged.\n\n" if photographer else "A client updated their photo edit list. This complete list replaces previous selections for this gallery.\n\n") +
         f"{changes}"
         f"Client: {client_email}\nFolder: {folder_url}\n"
-        f"Selected: {len(files)}\n\n{rows}"
+        f"Current list ({len(files)}): {names(files)}"
     )
 
     port = int(os.getenv("SMTP_PORT", "587"))
@@ -313,7 +318,7 @@ def send_selection_email(client_email: str, folder_url: str, files: list[dict], 
 @app.get("/photographer")
 @app.get("/")
 def index():
-    return render_template("index.html", photographer_mode=request.path == "/photographer")
+    return render_template("index.html", photographer_mode=request.path == "/photographer", app_js_version=APP_JS_VERSION), 200, {'Cache-Control': 'no-store'}
 
 
 @app.get("/health")
@@ -586,7 +591,7 @@ def submit():
                     sent.update(additions)
                     if len(sent) > 1000:
                         raise ValueError('A gallery can contain at most 1000 sent selections.')
-                    send_selection_email(client_email, folder_url, email_files(access, folder_url, list(sent.values())))
+                    send_selection_email(client_email, folder_url, email_files(access, folder_url, list(sent.values())), added=list(additions.values()))
                 for item in clean_files:
                     saved.pop(item['id'], None)
                 selections['stage'] = 'wait_for_edits'

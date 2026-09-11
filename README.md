@@ -29,8 +29,12 @@ Docker build context. Generated screenshots belong in `.local/artifacts/`.
 ## Run locally
 
 Create a `.env` file with `DATABASE_URL`, `GOOGLE_API_KEY`, `SECRET_KEY`,
-`SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, and
-`PORTFOLIO_OWNER_EMAIL`. Keep credentials out of Git.
+`SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, and `SMTP_PASSWORD`. Keep credentials out of Git.
+Selection notifications go to `leannevuphoto@gmail.com`. Photo names appear as
+`[name, name, name]` without individual photo links; the gallery folder link is retained.
+Client update emails include added and removed counts and lists, followed by the
+complete current sent list and its count. Previously sent photos are not counted
+as new additions. Photographer emails show the current photographer list and count.
 
 ```powershell
 python -m venv .venv

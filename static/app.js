@@ -1,6 +1,8 @@
 const state = { images: [], selected: new Map(), lightboxIndex: 0, stage: "choose_edits", lazy: false, email: "" };
 state.owner = document.body.dataset.photographer === "true";
 state.otherPicks = new Set();
+state.clientPicks = [];
+state.clientSent = [];
 state.galleryId = "";
 state.galleries = [];
 state.sent = new Map();
@@ -40,6 +42,7 @@ async function requestGallery(payload) {
     try {
       response = await fetch("/api/gallery", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(payload)});
       const data = await readApiResponse(response);
+      if (data.redirect === '/photographer') return data;
       if (!Array.isArray(data.galleries) || (data.gallery && !Array.isArray(data.images))) {
         throw new Error("The server returned incomplete gallery information. Please try again shortly.");
       }
@@ -551,6 +554,12 @@ async function loadGallery(email, galleryId = "", chooseMore = false) {
     state.galleries = data.galleries || [];
     state.galleryId = data.gallery.id;
     state.otherPicks = new Set((state.owner ? [...(data.selections?.client_saved || []), ...(data.selections?.client_sent || [])] : data.selections?.photographer_selected || []).map(file => file.id));
+    if (state.owner) {
+      state.clientSent = data.selections?.client_sent || [];
+      state.clientPicks = [...new Map([...(data.selections?.client_saved || []), ...(data.selections?.client_sent || [])].map(file => [file.id, file])).values()];
+      $('#copy-photos-message').textContent = '';
+      $('#copy-photos-fallback').hidden = true;
+    }
 $('#other-picks-tab').hidden = !state.owner && data.gallery.photographer_picks !== 'yes';
     $('#waiting-photographer').hidden = state.owner || data.gallery.photographer_picks !== 'yes';
     $('#other-picks-tab').textContent = state.owner ? 'Client picks' : 'Photographer picks';
@@ -853,7 +862,36 @@ function showOwnerError(error) {
   message($('#owner-message'), error.message, 'error');
   $('#owner-retry').hidden = false;
 }
+async function copySelectedPhotoNames(client, sentOnly = false) {
+  const status = $('#copy-photos-message');
+  const fallback = $('#copy-photos-fallback');
+  if (state.busy || state.loading) {
+    status.textContent = 'Please wait for your selections to finish saving.';
+    return;
+  }
+  fallback.hidden = true;
+  const files = sentOnly ? state.clientSent : client ? state.clientPicks : [...state.selected.values()];
+  const names = [...new Set(files.map(file => file.name))];
+  if (!names.length) {
+    status.textContent = sentOnly ? 'No client sent filenames to copy.' : client ? 'No client selections to copy.' : 'No photographer selections to copy.';
+    return;
+  }
+  const text = `[${names.join(', ')}]`;
+  try {
+    await navigator.clipboard.writeText(text);
+    status.textContent = `Copied ${names.length} ${sentOnly ? 'client sent' : client ? 'client' : 'photographer'} filenames. Ready to paste into the retrieval script.`;
+  } catch {
+    fallback.value = text;
+    fallback.hidden = false;
+    fallback.focus();
+    fallback.select();
+    status.textContent = 'Automatic copying is unavailable. Press Ctrl+C (or Command+C) to copy the selected list.';
+  }
+}
 if (state.owner) {
+  $('#copy-client-photos').addEventListener('click', () => copySelectedPhotoNames(true));
+  $('#copy-client-sent').addEventListener('click', () => copySelectedPhotoNames(true, true));
+  $('#copy-my-photos').addEventListener('click', () => copySelectedPhotoNames(false));
   $('#intro').hidden = true;
   $('#owner-retry').addEventListener('click', () => showOwnerGalleries().catch(showOwnerError));
   showOwnerGalleries().catch(showOwnerError);

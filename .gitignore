@@ -4,6 +4,7 @@
 !.env.example
 .local/
 .test-tools/
+retrieve_selected_edits.py
 client_secret_*.json
 
 # Generated Python and editor files.
