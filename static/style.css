@@ -261,3 +261,5 @@ body[data-owner-read-only="true"] [data-page="selected"],
 body[data-owner-read-only="true"] #copy-my-photos {
   display: none !important;
 }
+
+.flow-step{font-family:inherit}.flow-step:not(:disabled){cursor:pointer}.flow-step:focus-visible{outline:3px solid var(--ink);outline-offset:5px}.flow-step:disabled{cursor:default}.flow-step:disabled:not(.current):not(.complete){opacity:.55}

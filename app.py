@@ -398,11 +398,27 @@ def nordlocker_photo(token):
     return response
 
 
-def gallery_choices(access):
+def gallery_entries(access):
     return [dict(id=share_fingerprint(url), gallery=config.get('gallery') or f'Gallery {index}',
                  date=config.get('date', ''), stage=config['stage'], photographer_picks=config.get('photographer_picks', 'no'))
             for index, (url, value) in enumerate(access.items(), 1)
             for config in [gallery_config(url, value)]]
+
+
+def gallery_choices(access):
+    groups = {}
+    for entry in gallery_entries(access):
+        config = access[next(url for url in access if share_fingerprint(url) == entry['id'])]
+        name = config.get('gallery', '') if isinstance(config, dict) else ''
+        key = (name.strip().casefold(), entry['date']) if name.strip() and entry['date'] else entry['id']
+        groups.setdefault(key, []).append(entry)
+    priority = {'choose_edits': 0, 'wait_for_edits': 1, 'final_edits': 2}
+    choices = []
+    for entries in groups.values():
+        default = max(entries, key=lambda entry: priority[entry['stage']])
+        # Preserve every folder ID: selections and downloads remain folder-specific.
+        choices.append(dict(default, stages=entries))
+    return choices
 
 
 def selected_folder(access, gallery_id):
@@ -446,10 +462,12 @@ def gallery():
     choices = gallery_choices(access)
     if len(choices) > 1 and not data.get('gallery_id'):
         return jsonify(galleries=choices)
-    folder_url = selected_folder(access, data.get('gallery_id'))
+    folder_url = selected_folder(access, data.get('gallery_id') or choices[0]['id'])
     if not folder_url:
         return jsonify(error="Please choose one of your galleries."), 400
-    metadata = next(choice for choice in choices if choice['id'] == share_fingerprint(folder_url))
+    metadata = next(entry for entry in gallery_entries(access) if entry['id'] == share_fingerprint(folder_url))
+    metadata['stages'] = next(choice['stages'] for choice in choices
+                              if any(entry['id'] == metadata['id'] for entry in choice['stages']))
     try:
         selections = selection_state(client_email, folder_url, metadata['stage'])
     except (OSError, RuntimeError) as exc:

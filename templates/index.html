@@ -49,11 +49,11 @@
       </div>
       <p id="selection-message" class="message selection-message" role="status"></p>
       <nav class="flow" aria-label="Your photo process">
-        <div class="flow-step" data-stage="choose_edits"><span>01</span><strong>Choose edits</strong><p>Select the photographs you would like me to edit.</p></div>
+        <button type="button" disabled class="flow-step" data-stage="choose_edits"><span>01</span><strong>Choose edits</strong><p>Select the photographs you would like me to edit.</p></button>
         <span class="flow-line" aria-hidden="true"></span>
-        <div class="flow-step" data-stage="wait_for_edits"><span>02</span><strong>Editing</strong><p>Your selected photographs are being carefully refined.</p></div>
+        <button type="button" disabled class="flow-step" data-stage="wait_for_edits"><span>02</span><strong>Editing</strong><p>Your selected photographs are being carefully refined.</p></button>
         <span class="flow-line" aria-hidden="true"></span>
-        <div class="flow-step" data-stage="final_edits"><span>03</span><strong>Final edits</strong><p>Your finished photographs are ready to view and download.</p></div>
+        <button type="button" disabled class="flow-step" data-stage="final_edits"><span>03</span><strong>Final edits</strong><p>Your finished photographs are ready to view and download.</p></button>
       </nav>
       <a id="view-gallery" class="view-gallery" href="#gallery-section" hidden>
         <span>View gallery</span>
@@ -106,6 +106,9 @@
       <span id="selected-preview">View filenames</span>
     </button>
     <div id="tray-detail" class="tray-detail">
+      <h3 id="pending-heading" class="cart-heading" hidden>Pending selections ? added to cart automatically at 20</h3>
+      <ol id="pending-list"></ol>
+      <button id="add-to-cart" class="button light" type="button" hidden>Add to cart</button>
       <h3 id="saved-heading" class="cart-heading">Saved - not sent</h3>
       <ol id="selected-list"></ol>
       <h3 id="sent-heading" class="cart-heading" hidden>Sent for editing</h3>
@@ -136,6 +139,7 @@
       <img id="lightbox-image" alt="">
       <div class="lightbox-meta">
         <figcaption id="lightbox-caption"></figcaption>
+        <button id="lightbox-add-to-cart" class="button light" type="button" hidden>Add to cart</button>
         <button id="lightbox-select" class="lightbox-select" type="button" aria-pressed="false">Add to edits <span>+</span></button>
       </div>
     </figure>

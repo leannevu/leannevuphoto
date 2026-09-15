@@ -6,6 +6,7 @@ state.clientSent = [];
 state.galleryId = "";
 state.galleries = [];
 state.sent = new Map();
+state.pending = new Map();
 state.busy = false;
 state.loading = false;
 state.page = "full";
@@ -56,6 +57,7 @@ async function requestGallery(payload) {
 }
 
 async function animateWorkflow(stage) {
+  updateWorkflowNavigation(stage);
   const order = {choose_edits: 0, wait_for_edits: 1, final_edits: 2};
   const steps = [...document.querySelectorAll(".flow-step")];
   const lines = [...document.querySelectorAll(".flow-line")];
@@ -137,13 +139,41 @@ function message(target, text = "", type = "") {
   if (type) target.classList.add(type);
 }
 
+function pendingKey() {
+  return `photo-picks:${state.owner ? 'owner' : 'client'}:${state.email.trim().toLowerCase()}:${state.galleryId}`;
+}
+
+function rememberPending() {
+  try { sessionStorage.setItem(pendingKey(), JSON.stringify([...state.pending.keys()])); } catch {}
+}
+
+function restorePending() {
+  state.pending.clear();
+  if (state.stage === 'final_edits') return;
+  try {
+    const ids = new Set(JSON.parse(sessionStorage.getItem(pendingKey()) || '[]'));
+    state.images.forEach(image => { if (ids.has(image.id)) state.pending.set(image.id, image); });
+  } catch {}
+}
+
+async function addToCart() {
+  if (!state.pending.size || state.busy || state.loading) return;
+  await mutateSelections('save', {files: [...state.pending.keys()].map(id => ({id}))});
+}
+
 function applySelections(selections) {
   const images = new Map(state.images.map(image => [image.id, image]));
   state.selected = new Map((selections.saved || []).map(file => [file.id, images.get(file.id) || file]));
   state.sent = new Map((selections.sent || []).map(file => [file.id, images.get(file.id) || file]));
+  for (const [id, file] of state.pending) {
+    if (state.selected.has(id) || state.sent.has(id)) state.pending.delete(id);
+    else state.selected.set(id, file);
+  }
+  rememberPending();
   state.stage = selections.stage || state.stage;
+  updateWorkflowNavigation(state.stage === 'final_edits' ? 'final_edits' : ($('#gallery-section').hidden ? state.stage : 'choose_edits'));
   document.body.dataset.stage = state.stage;
-  const current = {choose_edits: 0, wait_for_edits: 1, final_edits: 2}[state.stage];
+  const current = {choose_edits: 0, wait_for_edits: 1, final_edits: 2}[state.viewStage];
   document.querySelectorAll('.flow-step').forEach((step, index) => {
     step.classList.toggle('current', index === current);
     step.classList.toggle('complete', index < current);
@@ -156,10 +186,11 @@ function applySelections(selections) {
 
 function updateTray() {
   const isFinal = state.stage === "final_edits" && !state.owner;
-  const files = [...state.selected.values()];
+  const pending = [...state.pending.values()];
+  const files = [...state.selected.values()].filter(file => !state.pending.has(file.id));
   const sent = isFinal ? [] : [...state.sent.values()];
-  $("#selected-count").textContent = files.length + sent.length;
-  tray.hidden = state.page === 'other' || files.length + sent.length === 0;
+  $("#selected-count").textContent = files.length + sent.length + pending.length;
+  tray.hidden = state.page === 'other' || files.length + sent.length + pending.length === 0;
   function row(file, alreadySent) {
     const li = document.createElement("li");
     const name = document.createElement("span");
@@ -179,6 +210,14 @@ function updateTray() {
     li.append(name, button);
     return li;
   }
+  $("#pending-list").replaceChildren(...pending.map(file => row(file, false)));
+  $("#pending-heading").hidden = pending.length === 0;
+  $("#add-to-cart").hidden = pending.length === 0;
+  $("#add-to-cart").disabled = state.busy;
+  $("#add-to-cart").textContent = `Add to cart (${pending.length})`;
+  $("#lightbox-add-to-cart").hidden = pending.length === 0;
+  $("#lightbox-add-to-cart").disabled = state.busy;
+  $("#lightbox-add-to-cart").textContent = `Add to cart (${pending.length})`;
   $("#selected-list").replaceChildren(...files.map(file => row(file, false)));
   $("#sent-list").replaceChildren(...sent.map(file => row(file, true)));
   $("#saved-heading").textContent = isFinal ? "For download" : state.owner ? "Photographer picks · saved automatically" : "Saved drafts · not emailed";
@@ -187,7 +226,7 @@ function updateTray() {
   $("#unsend-hint").hidden = sent.length === 0;
   $("#cart-choose-more").hidden = state.stage !== "wait_for_edits";
   $("#cart-choose-more").disabled = state.busy;
-  $("#selected-preview").textContent = `${files.length} saved${state.owner || isFinal ? '' : ` · ${sent.length} sent`} · ${tray.classList.contains("open") ? 'Close cart' : 'Review cart'}`;
+  $("#selected-preview").textContent = `${pending.length} pending ? ${files.length} in cart${state.owner || isFinal ? '' : ` · ${sent.length} sent`} · ${tray.classList.contains("open") ? 'Close cart' : 'Review cart'}`;
   $("#submit-selection").textContent = isFinal ? "Download selected" : state.owner ? "Email my photographer picks" : "Email selections to Leanne";
   $("#submit-selection").hidden = files.length === 0;
   $("#submit-selection").disabled = state.busy;
@@ -278,7 +317,21 @@ function toggleSelection(image) {
     return;
   }
   if (state.stage !== "final_edits") {
-    return state.selected.has(image.id) ? mutateSelections("remove", {file_id: image.id}) : mutateSelections("save", {files: [{id: image.id}]});
+    if (state.pending.has(image.id)) {
+      state.pending.delete(image.id);
+      state.selected.delete(image.id);
+    } else if (state.selected.has(image.id)) {
+      return mutateSelections("remove", {file_id: image.id});
+    } else {
+      state.pending.set(image.id, image);
+      state.selected.set(image.id, image);
+    }
+    rememberPending();
+    updateSelectionUI(image);
+    updateTray();
+    refreshGalleryPage();
+    if (state.pending.size >= 20) return addToCart();
+    return;
   }
   if (state.selected.has(image.id)) state.selected.delete(image.id);
   else state.selected.set(image.id, image);
@@ -468,6 +521,7 @@ function showGalleryPicker() {
   state.sent.clear();
   lazyLoader?.stop();
   state.selected.clear();
+  state.pending.clear();
   state.images = [];
   state.galleryId = "";
   lightboxRequest += 1;
@@ -523,13 +577,37 @@ async function chooseMoreEdits() {
   if (state.busy) return;
   tray.classList.remove("open");
   $("#tray-toggle").setAttribute("aria-expanded", "false");
-  await loadGallery(state.email, state.galleryId, true);
+  const target = workflowTarget('choose_edits');
+  if (target) await loadGallery(state.email, target.id, true);
 }
 $("#choose-more").addEventListener("click", chooseMoreEdits);
 $("#cart-choose-more").addEventListener("click", chooseMoreEdits);
 
+function workflowTarget(stage) {
+  const entries = state.stageFolders || [];
+  if (stage === 'final_edits') return entries.find(entry => entry.stage === stage);
+  const proofs = entries.filter(entry => entry.stage !== 'final_edits');
+  if (stage === 'choose_edits') return proofs.find(entry => entry.id === state.galleryId) || proofs.find(entry => entry.stage === stage) || proofs[0];
+  return proofs.find(entry => entry.id === state.galleryId && state.sent.size > 0) || proofs.find(entry => entry.stage === stage);
+}
+
+function updateWorkflowNavigation(stage) {
+  state.viewStage = stage;
+  document.querySelectorAll('.flow-step').forEach(step => {
+    step.disabled = !workflowTarget(step.dataset.stage);
+    if (step.dataset.stage === stage) step.setAttribute('aria-current', 'step');
+    else step.removeAttribute('aria-current');
+  });
+}
+
+document.querySelectorAll('.flow-step').forEach(step => step.addEventListener('click', async () => {
+  if (state.busy || state.loading || state.bookmarkBusy) return;
+  const target = workflowTarget(step.dataset.stage);
+  if (target) await loadGallery(state.email, target.id, step.dataset.stage === 'choose_edits');
+}));
+
 async function loadGallery(email, galleryId = "", chooseMore = false) {
-  if (state.busy || state.loading) return;
+  if (state.busy || state.loading || state.bookmarkBusy) return;
   state.loading = true;
   message($("#form-message"));
   const button = form.querySelector("button");
@@ -554,6 +632,7 @@ async function loadGallery(email, galleryId = "", chooseMore = false) {
     if (!data.lazy) await preloadGallery(data.images);
     state.galleries = data.galleries || [];
     state.galleryId = data.gallery.id;
+    state.stageFolders = data.gallery.stages || [data.gallery];
     state.ownerReadOnly = state.owner && data.gallery.photographer_picks !== 'yes';
     document.body.dataset.ownerReadOnly = String(state.ownerReadOnly);
     state.otherPicks = new Set((state.owner ? [...(data.selections?.client_saved || []), ...(data.selections?.client_sent || [])] : data.selections?.photographer_selected || []).map(file => file.id));
@@ -597,6 +676,7 @@ $('#other-picks-tab').hidden = !state.owner && data.gallery.photographer_picks !
     state.stage = data.stage;
     state.selected.clear();
     state.sent.clear();
+    restorePending();
     if (data.stage !== "final_edits") applySelections(data.selections || {});
     message($("#selection-message"));
     updateTray();
@@ -606,7 +686,7 @@ $('#other-picks-tab').hidden = !state.owner && data.gallery.photographer_picks !
     $("#stage-message").hidden = !waiting;
     $("#view-gallery").hidden = waiting;
     $("#gallery-section").hidden = true;
-    await animateWorkflow(data.stage);
+    await animateWorkflow(chooseMore && data.stage !== 'final_edits' ? 'choose_edits' : data.stage);
     $(".flow").hidden = state.owner;
     if (data.stage === "wait_for_edits" && !chooseMore) {
       $("#gallery-section").hidden = true;
@@ -643,6 +723,8 @@ $("#tray-toggle").addEventListener("click", () => {
   $("#tray-toggle").setAttribute("aria-expanded", tray.classList.contains("open"));
   updateTray();
 });
+$("#add-to-cart").addEventListener("click", addToCart);
+$("#lightbox-add-to-cart").addEventListener("click", addToCart);
 $("#submit-selection").addEventListener("click", async () => {
   const button = $("#submit-selection");
   button.disabled = true;
@@ -662,7 +744,7 @@ $("#submit-selection").addEventListener("click", async () => {
     button.disabled = false;
     return;
   }
-  await mutateSelections("send", {files: [...state.selected.values()].map(file => ({id: file.id}))});
+  await mutateSelections("send", {files: [...state.selected.values()].filter(file => !state.pending.has(file.id)).map(file => ({id: file.id}))});
 
 });
 document.querySelectorAll("#view-toggle button").forEach((button) => button.addEventListener("click", () => {
