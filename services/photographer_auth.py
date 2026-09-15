@@ -5,6 +5,7 @@ import time
 from datetime import timedelta
 
 from flask import jsonify, redirect, request, session
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 OWNER_EMAIL = 'leannevuphoto@gmail.com'
 
@@ -20,9 +21,14 @@ def open_workspace(email):
 
 
 def register(app):
+    railway = bool(os.getenv('RAILWAY_ENVIRONMENT') or os.getenv('RAILWAY_ENVIRONMENT_ID'))
+    if railway:
+        # Railway terminates HTTPS before forwarding requests to Gunicorn.
+        # Trust only its scheme header; keep Host and client address unchanged.
+        app.wsgi_app = ProxyFix(app.wsgi_app, x_for=0, x_proto=1, x_host=0, x_port=0, x_prefix=0)
     app.secret_key = os.getenv('SECRET_KEY') or secrets.token_hex(32)
     app.config.update(SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SAMESITE='Strict',
-                      SESSION_COOKIE_SECURE=bool(os.getenv('RAILWAY_ENVIRONMENT') or os.getenv('RAILWAY_ENVIRONMENT_ID')),
+                      SESSION_COOKIE_SECURE=railway,
                       PERMANENT_SESSION_LIFETIME=timedelta(hours=8))
     def authenticated():
         return session.get('photographer_email') == OWNER_EMAIL and session.get('photographer_until', 0) > time.time()

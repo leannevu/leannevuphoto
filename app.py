@@ -5,9 +5,8 @@ import io
 import json
 import os
 import re
-import smtplib
-import ssl
 from email.message import EmailMessage
+from html import escape
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -270,20 +269,22 @@ def list_images(folder_id: str) -> list[dict]:
             return images
 
 
+class EmailDeliveryError(RuntimeError):
+    """The email provider did not confirm acceptance."""
+
+
 def send_selection_email(client_email: str, folder_url: str, files: list[dict], removed=None, photographer=False, added=None) -> None:
-    smtp_host = os.getenv("SMTP_HOST")
-    smtp_user = os.getenv("SMTP_USER")
-    smtp_password = os.getenv("SMTP_PASSWORD")
+    api_key = os.getenv("RESEND_API_KEY", "").strip()
+    sender = os.getenv("EMAIL_FROM", "").strip()
     recipient = photographer_auth.OWNER_EMAIL
-    if not all((smtp_host, smtp_user, smtp_password, recipient)):
+    if not all((api_key, sender, recipient)):
         raise RuntimeError("Email delivery is not configured yet.")
 
     message = EmailMessage()
     message["Subject"] = f"Photo edit selection — {len(files)} image{'s' if len(files) != 1 else ''}"
     if photographer:
         message.replace_header("Subject", f"Photographer picks — {len(files)} images")
-    # Authenticated SMTP providers generally require From to match SMTP_USER.
-    message["From"] = smtp_user
+    message["From"] = sender
     message["To"] = recipient
     message["Reply-To"] = client_email
     def names(items):
@@ -302,17 +303,52 @@ def send_selection_email(client_email: str, folder_url: str, files: list[dict], 
         f"Current list ({len(files)}): {names(files)}"
     )
 
-    port = int(os.getenv("SMTP_PORT", "587"))
-    context = ssl.create_default_context()
-    if port == 465:
-        with smtplib.SMTP_SSL(smtp_host, port, context=context, timeout=20) as server:
-            server.login(smtp_user, smtp_password)
-            server.send_message(message)
-    else:
-        with smtplib.SMTP(smtp_host, port, timeout=20) as server:
-            server.starttls(context=context)
-            server.login(smtp_user, smtp_password)
-            server.send_message(message)
+    emails = [{"from": sender, "to": [recipient], "reply_to": client_email,
+               "subject": str(message["Subject"]), "text": message.get_content()}]
+    if not photographer:
+        current = '\n'.join(f"- {item['name']}" for item in files) or 'No photos are currently selected for editing.'
+        client_text = (
+            "Hi there,\n\nThank you for updating your photo selections! "
+            "Here is a copy of your latest selection update for your records.\n\n"
+            f"Added to your edit list ({len(added)}): {names(added)}\n"
+            f"Removed from your edit list ({len(removed)}): {names(removed)}\n\n"
+            f"Your current edit selection ({len(files)} photos):\n{current}\n\n"
+            "This is your complete current list, including any photos you submitted earlier. "
+            "You can return to the gallery website to review your selections.\n\n"
+            "If you have any questions or would like to discuss a change, simply reply to this email.\n\n"
+            "Warmly,\nLeanne\nLeanne Vu Photo"
+        )
+        client_html = (
+            '<html><body style="margin:0;background:#f7f5f1;color:#292722;font-family:Arial,sans-serif">'
+            '<div style="max-width:600px;margin:32px auto;padding:32px;background:#ffffff">'
+            '<p style="font-size:12px;letter-spacing:2px">LEANNE VU PHOTO</p>'
+            '<h1 style="font-family:Georgia,serif;font-size:28px">Your photo selection update</h1>'
+            + ''.join(f'<p style="line-height:1.7">{escape(p).replace(chr(10), "<br>")}</p>' for p in client_text.split('\n\n'))
+            + '</div></body></html>'
+        )
+        emails.append({"from": sender, "to": [client_email], "reply_to": recipient,
+                       "subject": "Your photo selection update | Leanne Vu Photo",
+                       "text": client_text, "html": client_html})
+
+    try:
+        response = requests.post(
+            "https://api.resend.com/emails" if photographer else "https://api.resend.com/emails/batch",
+            headers={"Authorization": f"Bearer {api_key}"},
+            json=emails[0] if photographer else emails,
+            timeout=20,
+            allow_redirects=False,
+        )
+        if not 200 <= response.status_code < 300:
+            app.logger.error("Resend rejected email: HTTP %s", response.status_code)
+            raise EmailDeliveryError("Email delivery failed.")
+        result = response.json()
+        accepted = [result] if photographer else result.get('data') if isinstance(result, dict) else None
+        if (not isinstance(accepted, list) or len(accepted) != len(emails)
+                or any(not isinstance(item, dict) or not isinstance(item.get('id'), str) or not item['id'] for item in accepted)):
+            raise EmailDeliveryError("Email delivery was not confirmed.")
+    except (requests.RequestException, ValueError) as exc:
+        app.logger.error("Resend request failed: %s", type(exc).__name__)
+        raise EmailDeliveryError("Email delivery was not confirmed.") from exc
 
 
 @app.get("/photographer")
@@ -514,7 +550,7 @@ def photographer_selections():
         return jsonify(selections=selections, message='Photographer picks emailed to Leanne.' if action == 'send' else 'Photographer picks saved.')
     except ValueError as exc:
         return jsonify(error=str(exc)), 400
-    except (OSError, RuntimeError, smtplib.SMTPException, requests.RequestException):
+    except (OSError, RuntimeError, requests.RequestException):
         return jsonify(error='Photographer picks could not be updated. Please try again.'), 503
 
 
@@ -609,7 +645,7 @@ def submit():
         return jsonify(error=str(exc)), 400
     except (NordLockerError, requests.RequestException):
         return jsonify(error='Your photo provider did not respond. Please try again.'), 502
-    except smtplib.SMTPException:
+    except EmailDeliveryError:
         return jsonify(error='The notification could not be sent. Your edit list has not changed. Please try again.'), 502
     except (OSError, RuntimeError) as exc:
         return jsonify(error=str(exc) or 'Your changes could not be saved. Please try again.'), 503

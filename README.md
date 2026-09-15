@@ -29,7 +29,7 @@ Docker build context. Generated screenshots belong in `.local/artifacts/`.
 ## Run locally
 
 Create a `.env` file with `DATABASE_URL`, `GOOGLE_API_KEY`, `SECRET_KEY`,
-`SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, and `SMTP_PASSWORD`. Keep credentials out of Git.
+`RESEND_API_KEY` and `EMAIL_FROM`. Keep credentials out of Git.
 Selection notifications go to `leannevuphoto@gmail.com`. Photo names appear as
 `[name, name, name]` without individual photo links; the gallery folder link is retained.
 Client update emails include added and removed counts and lists, followed by the
@@ -46,7 +46,33 @@ flask --app app run --debug
 Open http://127.0.0.1:5000. Google Drive folders need **Anyone with the link -
 Viewer** sharing and a Google API key with Drive API enabled. Restrict the key to
 Drive API; browser-referrer restrictions do not work for requests from Flask.
-Use a Gmail app password if sending through Gmail SMTP.
+## Email delivery (Resend HTTPS API)
+
+Email uses Resend over HTTPS, including on Railway Hobby. The old `SMTP_*`
+variables are no longer used.
+
+1. Create a Resend account and verify a sending domain at https://resend.com/domains
+   by adding the DNS records Resend provides.
+2. Create a sending API key at https://resend.com/api-keys.
+3. In Railway's service Variables, set `RESEND_API_KEY` to that key and
+   `EMAIL_FROM` to a sender on the verified domain, for example
+   `Leanne Vu Photo <notifications@leannevuphoto.com>`.
+4. Deploy this code and apply the variables. For local development, set the same
+   variables in `.env`. Never commit the API key.
+
+Your detailed notifications still go to `leannevuphoto@gmail.com`, with the client's
+address as Reply-To. Clients receive a separate branded HTML and plain-text
+confirmation with additions, removals, and the complete current selection; replies
+go to `leannevuphoto@gmail.com`. Both use `EMAIL_FROM` on your verified domain.
+Submitting additions or removing sent photos sends both messages through Resend's
+batch API. Saving drafts does not send email. Photographer picks email only Leanne.
+Resend must return an email ID for each message before the selection change is
+saved. Acceptance does not guarantee inbox delivery; check
+Resend's email dashboard for delivery or bounce status. Requests time out after
+20 seconds. A timeout or process crash after acceptance can still result in a
+notification arriving without the corresponding selection change being saved.
+
+API reference: https://resend.com/docs/api-reference/emails/send-email
 
 ## PostgreSQL
 
@@ -90,7 +116,7 @@ remains an explicit completed-gallery stage. **Choose more edits** reopens the
 proofs. **Unsend** removes an item and emails the updated complete edit list;
 it cannot recall earlier email. A completed gallery cannot change edit requests.
 Database row locks serialize updates. Failed email delivery leaves the stored
-list unchanged. A process crash between SMTP delivery and database commit can
+list unchanged. A process crash between provider acceptance and database commit can
 still require checking the latest list.
 
 ### Gallery activity
@@ -121,7 +147,7 @@ required. This is email-based routing, not identity verification: anyone who
 enters the photographer address can access the workspace.
 The gallery list, activity page/API, photographer selections, and photographer
 mode on the gallery API require the resulting eight-hour session. Direct visits
-without that session return to the home-page email field. SMTP is used only for
+without that session return to the home-page email field. Resend is used only for
 selection emails. Keep `SECRET_KEY` persistent across server restarts.
 
 Leanne can select photos in enabled galleries, see a read-only **Client picks**

@@ -268,6 +268,7 @@ async function mutateSelections(action, payload = {}) {
 }
 
 function toggleSelection(image) {
+  if (state.ownerReadOnly) return;
   if (state.busy || state.loading || state.page === "other") return;
   if (state.stage !== "final_edits" && state.sent.has(image.id)) {
     $("#lightbox").close();
@@ -553,6 +554,8 @@ async function loadGallery(email, galleryId = "", chooseMore = false) {
     if (!data.lazy) await preloadGallery(data.images);
     state.galleries = data.galleries || [];
     state.galleryId = data.gallery.id;
+    state.ownerReadOnly = state.owner && data.gallery.photographer_picks !== 'yes';
+    document.body.dataset.ownerReadOnly = String(state.ownerReadOnly);
     state.otherPicks = new Set((state.owner ? [...(data.selections?.client_saved || []), ...(data.selections?.client_sent || [])] : data.selections?.photographer_selected || []).map(file => file.id));
     if (state.owner) {
       state.clientSent = data.selections?.client_sent || [];
@@ -616,7 +619,7 @@ $('#other-picks-tab').hidden = !state.owner && data.gallery.photographer_picks !
     updateTray();
     const isFinal = data.stage === "final_edits";
     $("#gallery-eyebrow").textContent = isFinal ? "Your finished gallery" : "Your proofs";
-    $("#gallery-title").textContent = isFinal ? "Your final photographs." : state.owner ? "Choose your photographer picks." : "Choose your favorites.";
+    $("#gallery-title").textContent = state.ownerReadOnly ? "Browse photographs." : isFinal ? "Your final photographs." : state.owner ? "Choose your photographer picks." : "Choose your favorites.";
     $("#view-toggle").hidden = false;
     $("#gallery-count").textContent = `${data.count} photograph${data.count === 1 ? "" : "s"}`;
     $("#gallery-section").hidden = false;
@@ -849,7 +852,6 @@ async function showOwnerGalleries() {
     const detail = document.createElement('span'); detail.className = 'choice-date';
     detail.textContent = `${item.email} · ${item.date}${item.photographer_picks === 'yes' ? '' : ' · Photographer picks disabled'}`;
     button.append(title, detail);
-    button.disabled = item.photographer_picks !== 'yes';
     button.addEventListener('click', async () => {
       $('#owner-galleries').hidden = true;
       await loadGallery(item.email, item.id, true);
