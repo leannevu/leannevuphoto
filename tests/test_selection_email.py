@@ -59,6 +59,16 @@ class SelectionEmailTests(unittest.TestCase):
         with self.assertRaises(app.EmailDeliveryError):
             app.send_selection_email('client@example.com', 'https://example.com/folder', [self.photo])
 
+    def test_missing_configuration_logs_names_without_credentials(self):
+        for name in ('RESEND_API_KEY', 'EMAIL_FROM'):
+            with self.subTest(name=name), patch.dict(app.os.environ, {name: ' '}):
+                with self.assertLogs(app.app.logger, level='ERROR') as logs:
+                    with self.assertRaisesRegex(RuntimeError, 'not configured'):
+                        app.send_selection_email('client@example.com', 'https://example.com/folder', [self.photo])
+                self.assertIn('missing ' + name, '\n'.join(logs.output))
+                self.assertNotIn('test-key', '\n'.join(logs.output))
+                self.post.assert_not_called()
+
 
 if __name__ == '__main__':
     unittest.main()

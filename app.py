@@ -21,9 +21,14 @@ from flask import Flask, jsonify, render_template, request, send_file, url_for
 from itsdangerous import BadSignature, URLSafeTimedSerializer
 from services.nordlocker import bridge, NordLockerError
 
-load_dotenv()
+load_dotenv(Path(__file__).resolve().parent / '.env')
 
 app = Flask(__name__)
+email_config_status = ', '.join(
+    f"{name}={'present' if os.getenv(name, '').strip() else 'MISSING'}"
+    for name in ('RESEND_API_KEY', 'EMAIL_FROM')
+)
+app.logger.warning('Email configuration at startup: %s', email_config_status)
 APP_JS_VERSION = hashlib.sha256((Path(__file__).resolve().parent / 'static' / 'app.js').read_bytes()).hexdigest()[:12]
 app.config["MAX_CONTENT_LENGTH"] = 1 * 1024 * 1024
 photographer_auth.register(app)
@@ -278,6 +283,9 @@ def send_selection_email(client_email: str, folder_url: str, files: list[dict], 
     sender = os.getenv("EMAIL_FROM", "").strip()
     recipient = photographer_auth.OWNER_EMAIL
     if not all((api_key, sender, recipient)):
+        app.logger.error('Email send blocked: missing %s', ', '.join(
+            name for name, value in (('RESEND_API_KEY', api_key), ('EMAIL_FROM', sender)) if not value
+        ))
         raise RuntimeError("Email delivery is not configured yet.")
 
     message = EmailMessage()
