@@ -197,6 +197,20 @@ The app starts as `gunicorn app:app` with one worker, eight threads, and a
 
 ## Local checks
 
+### Retrieve selected originals
+
+Run `python retrieve_selected_edits.py` with the project dependencies installed
+and `DATABASE_URL` configured in `.env` (use a database address reachable from
+your computer). Enter your local photo folder, choose a numbered gallery from
+the photographer workspace list, then choose client sent edits, saved drafts,
+all client picks, or photographer picks when enabled. Filenames come directly
+from PostgreSQL; the script does not change database records.
+
+Matching originals are copied from your folder and its subfolders to
+`Documents/leannevuphoto/YYYY-MM-DD selected edits`. Missing or ambiguous
+filenames are reported and skipped. Existing output folders and original photos
+are preserved. The database stores filenames, not image files.
+
 On this workstation, the ignored `.local/` directory provides:
 
 ```powershell
