@@ -76,45 +76,29 @@ API reference: https://resend.com/docs/api-reference/emails/send-email
 
 ## PostgreSQL
 
-The existing `public.emails` table is the source of gallery access and cart
-state. `DATABASE_URL` takes precedence over any legacy CSV or JSON mapping.
-Each row represents one email/folder pair and contains:
+Gallery access uses one row per shoot in `public.galleries`. `DATABASE_URL` is
+required in production. The related tables use `gallery_id` foreign keys:
 
-- `email`, `gallery`, `date`, `folder_url`, `stage`, `process`
-- `saved` and `sent` JSONB arrays, each defaulting to `[]`
-- `bookmark` JSONB containing a photo reference or null (never TEXT)
-- `id`, `created_at`, and `updated_at`
+- `galleries.saved_selection`: JSONB draft selections; `bookmark` stays separate.
+- `client_selection.sent_selection`: JSONB submitted selections.
+- `my_selection.selection`: JSONB photographer picks, shown read-only in proofs.
+- `client_selection.stage` and `galleries.client_stage`: synchronized in both
+  directions by database triggers. Photographer selection stages are independent.
+- Each selection table has its own `production_link`. A published collection is
+  available only when its own stage is `final_edits` and its link is nonblank.
 
-An email can have multiple galleries. Use `google` or `nord` for `process` and
-`choose_edits`, `wait_for_edits`, or `final_edits` for `stage`.
-The database stores photo references, not the image files:
+Apply `docs/update_gallery_schema.sql` once, in a transaction, to update the
+existing tables in place. The SQL retains selection contents and production links,
+adds gallery-ID relationships, converts selection text to JSONB, and installs the
+stage triggers. `client_gallery` remains a display label rather than a join key.
+New selection records should use `gallery_id`. Gallery IDs keep shoots separate
+even when their names, dates, or provider links match.
 
-```json
-[{"id":"provider-photo-id","name":"Portrait.jpg"}]
-```
-
-For legacy databases with a TEXT bookmark column, run
-`docs/repair_bookmarks.sql` inside a transaction. It unwraps repeatedly encoded
-bookmarks and converts the column to JSONB while preserving saved/sent lists.
-Preview the conversion first; invalid bookmark references abort the repair.
-
-```sql
-SELECT id, gallery, date, saved, sent
-FROM public.emails
-WHERE email = 'client@example.com'
-ORDER BY id;
-```
-
-Selecting a proof saves it immediately and keeps the gallery in `choose_edits`.
-Any photos in `sent` set the gallery to `wait_for_edits`. Unsending the last
-photo returns it to `choose_edits`, even when saved drafts remain. PostgreSQL
-automatically synchronizes the stage on changes to these lists. `final_edits`
-remains an explicit completed-gallery stage. **Choose more edits** reopens the
-proofs. **Unsend** removes an item and emails the updated complete edit list;
-it cannot recall earlier email. A completed gallery cannot change edit requests.
-Database row locks serialize updates. Failed email delivery leaves the stored
-list unchanged. A process crash between provider acceptance and database commit can
-still require checking the latest list.
+Sending selections advances the client stage to `wait_for_edits`; removing the
+last sent selection returns it to `choose_edits`. `final_edits` remains an explicit
+publication status. Unpublished production links are excluded from gallery access.
+Published client selections and photographer picks share the download layout,
+with **My selections** and **Photographer picks** tabs when available.
 
 ### Gallery activity
 
@@ -147,13 +131,11 @@ mode on the gallery API require the resulting eight-hour session. Direct visits
 without that session return to the home-page email field. Resend is used only for
 selection emails. Keep `SECRET_KEY` persistent across server restarts.
 
-Leanne can browse galleries and view a read-only **Client picks** tab (saved
-and sent), and copy client selection filenames. Client selection emails and
+Leanne can select photographs in every gallery, save and send her picks to
+`my_selection`, view a read-only **Client picks** tab, and copy client filenames.
+The authenticated photographer endpoint always writes photographer selections;
+client endpoints write client selections. Photographer emails go only to Leanne. Client selection emails and
 bookmarks continue as before.
-
-For existing databases, apply `docs/remove_photographer_picks.sql` after deploying
-this code. It drops the two retired photographer columns without changing client
-saved/sent lists, stages, or bookmarks.
 
 The `data/` folder is not needed with PostgreSQL. Historical CSV import tools
 are kept locally under `.local/archive/`.
@@ -193,7 +175,7 @@ Run `python retrieve_selected_edits.py` with the project dependencies installed
 and `DATABASE_URL` configured in `.env` (use a database address reachable from
 your computer). Enter your local photo folder, choose a numbered gallery from
 the photographer workspace list, then choose client sent edits, saved drafts,
-or all client picks. Filenames come directly
+all client picks, or photographer picks. Filenames come directly
 from PostgreSQL; the script does not change database records.
 
 Matching originals are copied from your folder and its subfolders to

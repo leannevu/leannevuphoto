@@ -18,7 +18,7 @@
   <main>
     {% if photographer_mode %}
     <a class="activity-link" href="/photographer/activity">View gallery activity ↗</a>
-    <section id="owner-galleries" class="owner-panel"><p class="eyebrow">Leanne's workspace</p><h1>Your galleries.</h1><p>Browse any client gallery, view client picks, and copy client selection filenames.</p><p id="owner-message" class="message" role="status">Loading galleries...</p><div id="owner-choices" class="gallery-choices"></div><button id="owner-retry" class="button dark" type="button" hidden>Try again</button></section>
+    <section id="owner-galleries" class="owner-panel"><p class="eyebrow">Leanne's workspace</p><h1>Your galleries.</h1><p>Browse any client gallery, choose your photographer selections, and view client picks.</p><p id="owner-message" class="message" role="status">Loading galleries...</p><div id="owner-choices" class="gallery-choices"></div><button id="owner-retry" class="button dark" type="button" hidden>Try again</button></section>
     {% endif %}
     <section class="intro" id="intro">
       <p class="eyebrow">A simple place to choose</p>
@@ -48,6 +48,7 @@
         <button id="change-gallery" class="change-gallery" type="button" hidden>Choose another gallery</button>
       </div>
       <p id="selection-message" class="message selection-message" role="status"></p>
+      <nav id="published-tabs" class="gallery-pages" aria-label="Published photographs" hidden></nav>
       <nav class="flow" aria-label="Your photo process">
         <button type="button" disabled class="flow-step" data-stage="choose_edits"><span>01</span><strong>Choose edits</strong><p>Select the photographs you would like me to edit.</p></button>
         <span class="flow-line" aria-hidden="true"></span>
@@ -75,7 +76,7 @@
           <button class="active" data-view="grid" type="button" aria-label="Grid view" aria-pressed="true" title="Grid view"><span class="view-check" aria-hidden="true">&#10003;</span><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 3h5v5H3zM12 3h5v5h-5zM3 12h5v5H3zM12 12h5v5h-5z"/></svg></button>
         </div></div>
       </div>
-      <nav class="gallery-pages" aria-label="Browse photographs"><button type="button" data-page="full" aria-pressed="true">Full gallery</button><button type="button" data-page="selected" aria-pressed="false">Selected photos</button><button id="other-picks-tab" type="button" data-page="other" aria-pressed="false" hidden>Client picks</button></nav>
+      <nav class="gallery-pages" aria-label="Browse photographs"><button type="button" data-page="full" aria-pressed="true">Full gallery</button><button type="button" data-page="selected" aria-pressed="false">Selected photos</button><button id="other-picks-tab" type="button" data-page="other" aria-pressed="false" hidden>Client picks</button><button id="photographer-picks-tab" type="button" data-page="photographer" aria-pressed="false" hidden>Photographer picks</button></nav>
       <p id="picks-description" class="hint" hidden></p>
       {% if photographer_mode %}
       <div class="selection-copy-tools">

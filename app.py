@@ -72,6 +72,7 @@ class GalleryConfigurationError(RuntimeError):
 def gallery_config(folder_url, value):
     """Normalize old stage-only entries and explicit stage/process entries."""
     if isinstance(value, dict):
+        folder_url = value.get('source_url', folder_url)
         stage = str(value.get('stage', '')).strip().casefold()
         process = str(value.get('process', '')).strip().casefold()
     else:
@@ -92,11 +93,16 @@ def gallery_config(folder_url, value):
     result = {'stage': stage, 'process': process}
     if isinstance(value, dict):
         result.update({key: str(value.get(key, '')).strip() for key in ('gallery', 'date')})
+        result.update({key: value[key] for key in ('group_id', 'collection', 'source_url') if key in value})
     return result
 
 
 def gallery_process(access, folder_url):
     return gallery_config(folder_url, access[folder_url])['process']
+
+
+def gallery_source(access, folder_url):
+    return gallery_config(folder_url, access[folder_url]).get('source_url', folder_url)
 
 
 def normalize_client_access(value) -> dict:
@@ -273,7 +279,7 @@ class EmailDeliveryError(RuntimeError):
     """The email provider did not confirm acceptance."""
 
 
-def send_selection_email(client_email: str, folder_url: str, files: list[dict], removed=None, added=None) -> None:
+def send_selection_email(client_email: str, folder_url: str, files: list[dict], removed=None, added=None, photographer=False) -> None:
     api_key = os.getenv("RESEND_API_KEY", "").strip()
     sender = os.getenv("EMAIL_FROM", "").strip()
     recipient = photographer_auth.OWNER_EMAIL
@@ -284,7 +290,7 @@ def send_selection_email(client_email: str, folder_url: str, files: list[dict], 
     message["Subject"] = f"Photo edit selection — {len(files)} image{'s' if len(files) != 1 else ''}"
     message["From"] = sender
     message["To"] = recipient
-    message["Reply-To"] = client_email
+    message["Reply-To"] = recipient if photographer else client_email
     def names(items):
         return '[' + ', '.join(item['name'] for item in items) + ']'
 
@@ -323,9 +329,13 @@ def send_selection_email(client_email: str, folder_url: str, files: list[dict], 
         + ''.join(f'<p style="line-height:1.7">{escape(p).replace(chr(10), "<br>")}</p>' for p in client_text.split('\n\n'))
         + '</div></body></html>'
     )
-    emails.append({"from": sender, "to": [client_email], "reply_to": recipient,
-                   "subject": "Your photo selection update | Leanne Vu Photo",
-                   "text": client_text, "html": client_html})
+    if photographer:
+        emails[0].update(subject=f"Photographer picks - {len(files)} images", reply_to=recipient,
+                         text=f"Photographer selections for {client_email}\nFolder: {folder_url}\n\nCurrent list ({len(files)}): {names(files)}")
+    else:
+        emails.append({"from": sender, "to": [client_email], "reply_to": recipient,
+                       "subject": "Your photo selection update | Leanne Vu Photo",
+                       "text": client_text, "html": client_html})
 
     try:
         response = requests.post(
@@ -385,7 +395,7 @@ def nordlocker_photo(token):
     except (BadSignature, ValueError, TypeError, OSError, RuntimeError):
         return jsonify(error='This photo link is unavailable. Please reopen your gallery.'), 404
     try:
-        content, mime_type, name = bridge.photo(folder_url, file_id, kind)
+        content, mime_type, name = bridge.photo(config.get('source_url', folder_url), file_id, kind)
     except NordLockerError as exc:
         return jsonify(error=str(exc)), 502
     response = send_file(io.BytesIO(content), mimetype=mime_type,
@@ -397,7 +407,7 @@ def nordlocker_photo(token):
 
 def gallery_entries(access):
     return [dict(id=share_fingerprint(url), gallery=config.get('gallery') or f'Gallery {index}',
-                 date=config.get('date', ''), stage=config['stage'])
+                 date=config.get('date', ''), stage=config['stage'], collection=config.get('collection', 'proofs'))
             for index, (url, value) in enumerate(access.items(), 1)
             for config in [gallery_config(url, value)]]
 
@@ -407,12 +417,12 @@ def gallery_choices(access):
     for entry in gallery_entries(access):
         config = access[next(url for url in access if share_fingerprint(url) == entry['id'])]
         name = config.get('gallery', '') if isinstance(config, dict) else ''
-        key = (name.strip().casefold(), entry['date']) if name.strip() and entry['date'] else entry['id']
+        key = config.get('group_id') or ((name.strip().casefold(), entry['date']) if name.strip() and entry['date'] else entry['id'])
         groups.setdefault(key, []).append(entry)
     priority = {'choose_edits': 0, 'wait_for_edits': 1, 'final_edits': 2}
     choices = []
     for entries in groups.values():
-        default = max(entries, key=lambda entry: priority[entry['stage']])
+        default = max(entries, key=lambda entry: (priority[entry['stage']], entry.get('collection') != 'photographer'))
         # Preserve every folder ID: selections and downloads remain folder-specific.
         choices.append(dict(default, stages=entries))
     return choices
@@ -471,14 +481,14 @@ def gallery():
         return jsonify(error=str(exc)), 503
     owner_mode = data.get('photographer_mode') is True
     if owner_mode:
-        selections = dict(saved=[], sent=[], stage='choose_edits', bookmark=None, client_saved=selections['saved'], client_sent=selections['sent'])
+        selections = dict(saved=selections.get('photographer_selection', []), sent=[], stage=metadata['stage'] if metadata['collection'] != 'proofs' else 'choose_edits', bookmark=None, client_saved=selections['saved'], client_sent=selections['sent'], photographer_selection=selections.get('photographer_selection', []))
     stage = selections['stage']
     metadata['stage'] = stage
     if stage == "wait_for_edits" and not data.get('choose_more'):
         return jsonify(images=[], count=0, stage=stage, gallery=metadata, galleries=choices, selections=selections)
     if gallery_process(access, folder_url) == 'nord':
         try:
-            files = bridge.list_images(folder_url)
+            files = bridge.list_images(gallery_source(access, folder_url))
         except NordLockerError as exc:
             return jsonify(error=str(exc)), 502
         images = []
@@ -491,7 +501,7 @@ def gallery():
         if not images:
             return jsonify(error='No supported photos were found in this folder.'), 404
         return jsonify(images=images, count=len(images), stage=stage, source='nordlocker', lazy=True, gallery=metadata, galleries=choices, selections=selections)
-    folder_id = folder_id_from_url(folder_url)
+    folder_id = folder_id_from_url(gallery_source(access, folder_url))
     try:
         images = list_images(folder_id)
     except (ValueError, RuntimeError) as exc:
@@ -506,8 +516,8 @@ def gallery():
 def validated_selection_files(access, folder_url, files):
     if not isinstance(files, list) or not files or len(files) > 1000:
         raise ValueError('Select between 1 and 1000 photos.')
-    images = (bridge.list_images(folder_url) if gallery_process(access, folder_url) == 'nord'
-              else list_images(folder_id_from_url(folder_url)))
+    images = (bridge.list_images(gallery_source(access, folder_url)) if gallery_process(access, folder_url) == 'nord'
+              else list_images(folder_id_from_url(gallery_source(access, folder_url))))
     available = {str(item['id']): item for item in images}
     clean = {}
     for item in files:
@@ -520,7 +530,7 @@ def validated_selection_files(access, folder_url, files):
 
 def email_files(access, folder_url, files):
     nord = gallery_process(access, folder_url) == 'nord'
-    return [dict(item, viewUrl=folder_url if nord else f"https://drive.google.com/file/d/{item['id']}/view") for item in files]
+    return [dict(item, viewUrl=gallery_source(access, folder_url) if nord else f"https://drive.google.com/file/d/{item['id']}/view") for item in files]
 
 
 @app.get('/api/photographer/galleries')
@@ -528,9 +538,46 @@ def photographer_galleries():
     if not database_store.enabled():
         return jsonify(error='Photographer management requires PostgreSQL.'), 503
     try:
-        return jsonify(galleries=[dict(id=share_fingerprint(row['folder_url']), email=row['email'], gallery=row['gallery'], date=str(row['date'] or '')) for row in database_store.photographer_galleries()])
+        return jsonify(galleries=[dict(id=share_fingerprint(f"gallery:{row['id']}:proofs"), email=row['email'], gallery=row['gallery'], date=str(row['date'] or '')) for row in database_store.photographer_galleries()])
     except RuntimeError as exc:
         return jsonify(error=str(exc)), 503
+
+
+@app.post('/api/photographer/selections')
+def photographer_selections():
+    # The photographer auth guard protects this route; the payload email identifies
+    # the client gallery, never the actor or the destination selection table.
+    data = request.get_json(silent=True) or {}
+    email, access, error = client_folder_or_error(data)
+    if error:
+        return error
+    key = selected_folder(access, data.get('gallery_id'))
+    if not key or not database_store.enabled():
+        return jsonify(error='Choose a photographer workspace gallery.'), 400
+    action = data.get('action')
+    if action not in {'save', 'remove', 'send'}:
+        return jsonify(error='Choose a valid photographer action.'), 400
+    try:
+        files = validated_selection_files(access, key, data.get('files')) if action in {'save', 'send'} else []
+        with database_store.photographer_transaction(email, key) as selections:
+            picks = {item['id']: item for item in selections['saved']}
+            if action in {'save', 'send'}:
+                picks.update({item['id']: item for item in files})
+            else:
+                if not isinstance(data.get('file_id'), str):
+                    raise ValueError('Choose a photograph to remove.')
+                picks.pop(data['file_id'], None)
+            if len(picks) > 1000:
+                raise ValueError('Select at most 1000 photographs.')
+            selections['saved'] = list(picks.values())
+            if action == 'send':
+                send_selection_email(email, gallery_source(access, key), email_files(access, key, selections['saved']), photographer=True)
+                selections['production_stage'] = 'wait_for_edits'
+        return jsonify(selections=selections, message='Your photographer selections were sent.' if action == 'send' else 'Your photographer selections are saved.')
+    except ValueError as exc:
+        return jsonify(error=str(exc)), 400
+    except (OSError, RuntimeError, requests.RequestException) as exc:
+        return jsonify(error='Your photographer selections could not be saved or sent. Please try again.'), 503
 
 
 @app.post('/api/bookmark')
@@ -606,7 +653,7 @@ def submit():
                     sent.update(additions)
                     if len(sent) > 1000:
                         raise ValueError('A gallery can contain at most 1000 sent selections.')
-                    send_selection_email(client_email, folder_url, email_files(access, folder_url, list(sent.values())), added=list(additions.values()))
+                    send_selection_email(client_email, gallery_source(access, folder_url), email_files(access, folder_url, list(sent.values())), added=list(additions.values()))
                 for item in clean_files:
                     saved.pop(item['id'], None)
                 selections['stage'] = 'wait_for_edits'
@@ -614,7 +661,7 @@ def submit():
             else:
                 removed = sent.pop(file_id, None)
                 if removed:
-                    send_selection_email(client_email, folder_url, email_files(access, folder_url, list(sent.values())), removed=[removed])
+                    send_selection_email(client_email, gallery_source(access, folder_url), email_files(access, folder_url, list(sent.values())), removed=[removed])
                 status_message = 'Photo unsent. Leanne has been notified.' if removed else 'This photo is already outside your sent list.'
             if len(saved) > 1000 or len(sent) > 1000:
                 raise ValueError('A gallery can contain at most 1000 saved and 1000 sent selections.')

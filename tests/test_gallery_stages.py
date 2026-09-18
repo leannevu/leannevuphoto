@@ -35,7 +35,7 @@ class GalleryStagesTests(unittest.TestCase):
             images.assert_called_with('proofs')
             self.assertEqual(client.post('/api/gallery', json=dict(payload, gallery_id='foreign')).status_code, 400)
 
-    def test_owner_browses_client_picks_without_separate_selection_api(self):
+    def test_owner_browses_client_picks_with_protected_selection_api(self):
         client = app.app.test_client()
         client.post('/api/gallery', json={'email': app.photographer_auth.OWNER_EMAIL})
         saved = [{'id': 'saved', 'name': 'saved.jpg'}]
@@ -52,10 +52,10 @@ class GalleryStagesTests(unittest.TestCase):
         self.assertEqual(response.json['selections']['client_sent'], sent)
         self.assertEqual(response.json['selections']['saved'], [])
         self.assertEqual(response.json['images'], saved + sent)
-        self.assertEqual(client.post('/api/photographer/selections', json={}).status_code, 404)
+        self.assertEqual(app.app.test_client().post('/api/photographer/selections', json={}).status_code, 401)
         html = client.get('/photographer').get_data(as_text=True)
         self.assertIn('Client picks', html)
-        self.assertNotIn('Photographer picks', html)
+        self.assertIn('Photographer picks', html)
         self.assertNotIn('copy-my-photos', html)
 
     def test_different_dates_names_and_missing_metadata_stay_separate(self):

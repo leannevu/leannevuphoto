@@ -5,7 +5,7 @@ from . import database
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS public.gallery_visits (
     id uuid PRIMARY KEY,
-    gallery_row_id bigint NOT NULL REFERENCES public.emails(id),
+    gallery_row_id bigint NOT NULL REFERENCES public.galleries(id),
     started_at timestamptz NOT NULL DEFAULT clock_timestamp(),
     last_seen_at timestamptz NOT NULL DEFAULT clock_timestamp(),
     ended_at timestamptz,
@@ -26,13 +26,20 @@ def visit_id(value):
 
 def start(identifier, email, folder_url):
     identifier = visit_id(identifier)
+    access = database.access_for_email(email) or {}
+    config = access.get(folder_url)
+    if not config:
+        raise ValueError('This gallery visit is unavailable.')
+    with database.connection() as conn:
+        original = conn.execute('SELECT folder_url FROM public.galleries WHERE id = %s', (config['group_id'],)).fetchone()
+        folder_url = original['folder_url']
     with database.connection() as conn:
         row = conn.execute('''INSERT INTO public.gallery_visits (id, gallery_row_id)
-            SELECT %s, id FROM public.emails WHERE email = %s AND folder_url = %s
+            SELECT %s, id FROM public.galleries WHERE email = %s AND folder_url = %s
             ON CONFLICT (id) DO NOTHING RETURNING id''', (identifier, email.strip().casefold(), folder_url)).fetchone()
         if row is None:
             existing = conn.execute('''SELECT v.id FROM public.gallery_visits v
-                JOIN public.emails e ON e.id = v.gallery_row_id
+                JOIN public.galleries e ON e.id = v.gallery_row_id
                 WHERE v.id = %s AND e.email = %s AND e.folder_url = %s''',
                 (identifier, email.strip().casefold(), folder_url)).fetchone()
             if not existing:
@@ -58,7 +65,7 @@ def overview():
             SELECT v.id, e.email, e.gallery, v.started_at, v.last_seen_at,
                 CASE WHEN v.ended_at IS NOT NULL OR v.last_seen_at <= now() - interval '45 seconds' THEN 'left'
                      WHEN v.is_active THEN 'viewing' ELSE 'idle' END AS status
-                FROM public.gallery_visits v JOIN public.emails e ON e.id = v.gallery_row_id
+                FROM public.gallery_visits v JOIN public.galleries e ON e.id = v.gallery_row_id
                 WHERE v.started_at >= now() - interval '7 days'
             ), latest AS (SELECT * FROM recent ORDER BY started_at DESC, id LIMIT 200)
             SELECT jsonb_build_object(
