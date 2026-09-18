@@ -89,7 +89,7 @@ def gallery_config(folder_url, value):
     matches = google_url if process == 'google' else is_nordlocker_share(folder_url)
     if not matches:
         raise GalleryConfigurationError('The gallery link does not match its configured process (google or nord). Please contact Leanne.')
-    result = {'stage': stage, 'process': process, 'photographer_picks': value.get('photographer_picks', 'no') if isinstance(value, dict) else 'no'}
+    result = {'stage': stage, 'process': process}
     if isinstance(value, dict):
         result.update({key: str(value.get(key, '')).strip() for key in ('gallery', 'date')})
     return result
@@ -273,7 +273,7 @@ class EmailDeliveryError(RuntimeError):
     """The email provider did not confirm acceptance."""
 
 
-def send_selection_email(client_email: str, folder_url: str, files: list[dict], removed=None, photographer=False, added=None) -> None:
+def send_selection_email(client_email: str, folder_url: str, files: list[dict], removed=None, added=None) -> None:
     api_key = os.getenv("RESEND_API_KEY", "").strip()
     sender = os.getenv("EMAIL_FROM", "").strip()
     recipient = photographer_auth.OWNER_EMAIL
@@ -282,8 +282,6 @@ def send_selection_email(client_email: str, folder_url: str, files: list[dict], 
 
     message = EmailMessage()
     message["Subject"] = f"Photo edit selection — {len(files)} image{'s' if len(files) != 1 else ''}"
-    if photographer:
-        message.replace_header("Subject", f"Photographer picks — {len(files)} images")
     message["From"] = sender
     message["To"] = recipient
     message["Reply-To"] = client_email
@@ -291,13 +289,13 @@ def send_selection_email(client_email: str, folder_url: str, files: list[dict], 
         return '[' + ', '.join(item['name'] for item in items) + ']'
 
     added, removed = added or [], removed or []
-    changes = '' if photographer else (
+    changes = (
         f'Update: {len(added)} added, {len(removed)} removed.\n\n'
         f'Added ({len(added)}): {names(added)}\n'
         f'Removed ({len(removed)}): {names(removed)}\n\n'
     )
     message.set_content(
-        ("Leanne selected these photographer picks. Client selections are unchanged.\n\n" if photographer else "A client updated their photo edit list. This complete list replaces previous selections for this gallery.\n\n") +
+        "A client updated their photo edit list. This complete list replaces previous selections for this gallery.\n\n" +
         f"{changes}"
         f"Client: {client_email}\nFolder: {folder_url}\n"
         f"Current list ({len(files)}): {names(files)}"
@@ -305,36 +303,35 @@ def send_selection_email(client_email: str, folder_url: str, files: list[dict], 
 
     emails = [{"from": sender, "to": [recipient], "reply_to": client_email,
                "subject": str(message["Subject"]), "text": message.get_content()}]
-    if not photographer:
-        current = '\n'.join(f"- {item['name']}" for item in files) or 'No photos are currently selected for editing.'
-        client_text = (
-            "Hi there,\n\nThank you for updating your photo selections! "
-            "Here is a copy of your latest selection update for your records.\n\n"
-            f"Added to your edit list ({len(added)}): {names(added)}\n"
-            f"Removed from your edit list ({len(removed)}): {names(removed)}\n\n"
-            f"Your current edit selection ({len(files)} photos):\n{current}\n\n"
-            "This is your complete current list, including any photos you submitted earlier. "
-            "You can return to the gallery website to review your selections.\n\n"
-            "If you have any questions or would like to discuss a change, simply reply to this email.\n\n"
-            "Warmly,\nLeanne\nLeanne Vu Photo"
-        )
-        client_html = (
-            '<html><body style="margin:0;background:#f7f5f1;color:#292722;font-family:Arial,sans-serif">'
-            '<div style="max-width:600px;margin:32px auto;padding:32px;background:#ffffff">'
-            '<p style="font-size:12px;letter-spacing:2px">LEANNE VU PHOTO</p>'
-            '<h1 style="font-family:Georgia,serif;font-size:28px">Your photo selection update</h1>'
-            + ''.join(f'<p style="line-height:1.7">{escape(p).replace(chr(10), "<br>")}</p>' for p in client_text.split('\n\n'))
-            + '</div></body></html>'
-        )
-        emails.append({"from": sender, "to": [client_email], "reply_to": recipient,
-                       "subject": "Your photo selection update | Leanne Vu Photo",
-                       "text": client_text, "html": client_html})
+    current = '\n'.join(f"- {item['name']}" for item in files) or 'No photos are currently selected for editing.'
+    client_text = (
+        "Hi there,\n\nThank you for updating your photo selections! "
+        "Here is a copy of your latest selection update for your records.\n\n"
+        f"Added to your edit list ({len(added)}): {names(added)}\n"
+        f"Removed from your edit list ({len(removed)}): {names(removed)}\n\n"
+        f"Your current edit selection ({len(files)} photos):\n{current}\n\n"
+        "This is your complete current list, including any photos you submitted earlier. "
+        "You can return to the gallery website to review your selections.\n\n"
+        "If you have any questions or would like to discuss a change, simply reply to this email.\n\n"
+        "Warmly,\nLeanne\nLeanne Vu Photo"
+    )
+    client_html = (
+        '<html><body style="margin:0;background:#f7f5f1;color:#292722;font-family:Arial,sans-serif">'
+        '<div style="max-width:600px;margin:32px auto;padding:32px;background:#ffffff">'
+        '<p style="font-size:12px;letter-spacing:2px">LEANNE VU PHOTO</p>'
+        '<h1 style="font-family:Georgia,serif;font-size:28px">Your photo selection update</h1>'
+        + ''.join(f'<p style="line-height:1.7">{escape(p).replace(chr(10), "<br>")}</p>' for p in client_text.split('\n\n'))
+        + '</div></body></html>'
+    )
+    emails.append({"from": sender, "to": [client_email], "reply_to": recipient,
+                   "subject": "Your photo selection update | Leanne Vu Photo",
+                   "text": client_text, "html": client_html})
 
     try:
         response = requests.post(
-            "https://api.resend.com/emails" if photographer else "https://api.resend.com/emails/batch",
+            "https://api.resend.com/emails/batch",
             headers={"Authorization": f"Bearer {api_key}"},
-            json=emails[0] if photographer else emails,
+            json=emails,
             timeout=20,
             allow_redirects=False,
         )
@@ -342,7 +339,7 @@ def send_selection_email(client_email: str, folder_url: str, files: list[dict], 
             app.logger.error("Resend rejected email: HTTP %s", response.status_code)
             raise EmailDeliveryError("Email delivery failed.")
         result = response.json()
-        accepted = [result] if photographer else result.get('data') if isinstance(result, dict) else None
+        accepted = result.get('data') if isinstance(result, dict) else None
         if (not isinstance(accepted, list) or len(accepted) != len(emails)
                 or any(not isinstance(item, dict) or not isinstance(item.get('id'), str) or not item['id'] for item in accepted)):
             raise EmailDeliveryError("Email delivery was not confirmed.")
@@ -400,7 +397,7 @@ def nordlocker_photo(token):
 
 def gallery_entries(access):
     return [dict(id=share_fingerprint(url), gallery=config.get('gallery') or f'Gallery {index}',
-                 date=config.get('date', ''), stage=config['stage'], photographer_picks=config.get('photographer_picks', 'no'))
+                 date=config.get('date', ''), stage=config['stage'])
             for index, (url, value) in enumerate(access.items(), 1)
             for config in [gallery_config(url, value)]]
 
@@ -474,7 +471,7 @@ def gallery():
         return jsonify(error=str(exc)), 503
     owner_mode = data.get('photographer_mode') is True
     if owner_mode:
-        selections = dict(saved=selections.get('photographer_selected') or [], sent=[], stage='choose_edits', bookmark=None, client_saved=selections['saved'], client_sent=selections['sent'])
+        selections = dict(saved=[], sent=[], stage='choose_edits', bookmark=None, client_saved=selections['saved'], client_sent=selections['sent'])
     stage = selections['stage']
     metadata['stage'] = stage
     if stage == "wait_for_edits" and not data.get('choose_more'):
@@ -531,45 +528,9 @@ def photographer_galleries():
     if not database_store.enabled():
         return jsonify(error='Photographer management requires PostgreSQL.'), 503
     try:
-        return jsonify(galleries=[dict(id=share_fingerprint(row['folder_url']), email=row['email'], gallery=row['gallery'], date=str(row['date'] or ''), photographer_picks=row['photographer_picks']) for row in database_store.photographer_galleries()])
+        return jsonify(galleries=[dict(id=share_fingerprint(row['folder_url']), email=row['email'], gallery=row['gallery'], date=str(row['date'] or '')) for row in database_store.photographer_galleries()])
     except RuntimeError as exc:
         return jsonify(error=str(exc)), 503
-
-
-@app.post('/api/photographer/selections')
-def photographer_selections():
-    data = request.get_json(silent=True) or {}
-    email, access, error = client_folder_or_error(data)
-    if error:
-        return error
-    url = selected_folder(access, data.get('gallery_id'))
-    if not url or not database_store.enabled():
-        return jsonify(error='Choose an enabled photographer gallery.'), 400
-    action = data.get('action')
-    if action not in {'save', 'remove', 'send'}:
-        return jsonify(error='Choose a valid photographer action.'), 400
-    try:
-        files = validated_selection_files(access, url, data.get('files')) if action == 'save' else []
-        with database_store.photographer_transaction(email, url) as selections:
-            picks = {item['id']: item for item in selections['saved']}
-            if action == 'save':
-                picks.update({item['id']: item for item in files})
-            elif action == 'remove':
-                if not isinstance(data.get('file_id'), str):
-                    raise ValueError('Choose a photo to remove.')
-                picks.pop(data['file_id'], None)
-            elif action == 'send':
-                if not picks:
-                    raise ValueError('Choose photographs before emailing your picks.')
-                send_selection_email(email, url, email_files(access, url, list(picks.values())), photographer=True)
-            if len(picks) > 1000:
-                raise ValueError('Select at most 1000 photographer picks.')
-            selections['saved'] = list(picks.values())
-        return jsonify(selections=selections, message='Photographer picks emailed to Leanne.' if action == 'send' else 'Photographer picks saved.')
-    except ValueError as exc:
-        return jsonify(error=str(exc)), 400
-    except (OSError, RuntimeError, requests.RequestException):
-        return jsonify(error='Photographer picks could not be updated. Please try again.'), 503
 
 
 @app.post('/api/bookmark')

@@ -257,8 +257,7 @@ body[data-owner-read-only="true"] .select-button,
 body[data-owner-read-only="true"] #lightbox-select,
 body[data-owner-read-only="true"] #lightbox-status,
 body[data-owner-read-only="true"] #tray,
-body[data-owner-read-only="true"] [data-page="selected"],
-body[data-owner-read-only="true"] #copy-my-photos {
+body[data-owner-read-only="true"] [data-page="selected"] {
   display: none !important;
 }
 

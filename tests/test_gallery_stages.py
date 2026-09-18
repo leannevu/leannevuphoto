@@ -35,6 +35,29 @@ class GalleryStagesTests(unittest.TestCase):
             images.assert_called_with('proofs')
             self.assertEqual(client.post('/api/gallery', json=dict(payload, gallery_id='foreign')).status_code, 400)
 
+    def test_owner_browses_client_picks_without_separate_selection_api(self):
+        client = app.app.test_client()
+        client.post('/api/gallery', json={'email': app.photographer_auth.OWNER_EMAIL})
+        saved = [{'id': 'saved', 'name': 'saved.jpg'}]
+        sent = [{'id': 'sent', 'name': 'sent.jpg'}]
+        with patch.object(app, 'access_for_email', return_value=self.access), \
+             patch.object(app, 'selection_state', return_value=dict(saved=saved, sent=sent, stage='wait_for_edits')), \
+             patch.object(app, 'list_images', return_value=saved + sent):
+            response = client.post('/api/gallery', json={
+                'email': 'client@example.com', 'photographer_mode': True,
+                'gallery_id': app.share_fingerprint(self.proofs),
+            })
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json['selections']['client_saved'], saved)
+        self.assertEqual(response.json['selections']['client_sent'], sent)
+        self.assertEqual(response.json['selections']['saved'], [])
+        self.assertEqual(response.json['images'], saved + sent)
+        self.assertEqual(client.post('/api/photographer/selections', json={}).status_code, 404)
+        html = client.get('/photographer').get_data(as_text=True)
+        self.assertIn('Client picks', html)
+        self.assertNotIn('Photographer picks', html)
+        self.assertNotIn('copy-my-photos', html)
+
     def test_different_dates_names_and_missing_metadata_stay_separate(self):
         for field, value in [('date', '2026-07-21'), ('gallery', 'Wedding'), ('date', ''), ('gallery', '')]:
             with self.subTest(field=field, value=value):

@@ -220,14 +220,14 @@ function updateTray() {
   $("#lightbox-add-to-cart").textContent = `Add to cart (${pending.length})`;
   $("#selected-list").replaceChildren(...files.map(file => row(file, false)));
   $("#sent-list").replaceChildren(...sent.map(file => row(file, true)));
-  $("#saved-heading").textContent = isFinal ? "For download" : state.owner ? "Photographer picks · saved automatically" : "Saved drafts · not emailed";
+  $("#saved-heading").textContent = isFinal ? "For download" : "Saved drafts · not emailed";
   $("#saved-heading").hidden = files.length === 0;
   $("#sent-heading").hidden = sent.length === 0;
   $("#unsend-hint").hidden = sent.length === 0;
   $("#cart-choose-more").hidden = state.stage !== "wait_for_edits";
   $("#cart-choose-more").disabled = state.busy;
   $("#selected-preview").textContent = `${pending.length} pending ? ${files.length} in cart${state.owner || isFinal ? '' : ` · ${sent.length} sent`} · ${tray.classList.contains("open") ? 'Close cart' : 'Review cart'}`;
-  $("#submit-selection").textContent = isFinal ? "Download selected" : state.owner ? "Email my photographer picks" : "Email selections to Leanne";
+  $("#submit-selection").textContent = isFinal ? "Download selected" : "Email selections to Leanne";
   $("#submit-selection").hidden = files.length === 0;
   $("#submit-selection").disabled = state.busy;
 }
@@ -261,7 +261,7 @@ function updateSelectionUI(image) {
     button.setAttribute("aria-pressed", String(isSelected));
     const status = $("#lightbox-status");
     status.textContent = isSent ? "SENT FOR EDITING" : isSelected ? "SELECTED" : "NOT SELECTED";
-    if (state.page === 'other') status.textContent = state.owner ? 'CLIENT PICK' : 'PHOTOGRAPHER PICK';
+    if (state.page === 'other') status.textContent = 'CLIENT PICK';
     status.dataset.status = isSent ? "sent" : isSelected ? "selected" : "unselected";
     button.firstChild.textContent = isSent ? "View sent photo in cart " : isSelected ? "Remove selection " : "Select photo ";
     button.querySelector("span").textContent = isSelected ? "\u2713" : "+";
@@ -278,13 +278,13 @@ function setSelectionBusy(busy) {
 }
 
 async function mutateSelections(action, payload = {}) {
-  if (state.busy || state.loading) return;
+  if (state.owner || state.busy || state.loading) return;
   setSelectionBusy(true);
   let reopenGallery = false;
   message($("#submit-message"));
   message($("#selection-message"), action === "save" || action === "remove" ? "Saving your selection..." : "Updating your edit list...");
   try {
-    const response = await fetch(state.owner ? "/api/photographer/selections" : "/api/selections", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({email: state.email, gallery_id: state.galleryId, action, ...payload})});
+    const response = await fetch("/api/selections", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({email: state.email, gallery_id: state.galleryId, action, ...payload})});
     const data = await readApiResponse(response);
     applySelections(data.selections);
     reopenGallery = state.stage === "choose_edits" && $("#gallery-section").hidden;
@@ -633,19 +633,17 @@ async function loadGallery(email, galleryId = "", chooseMore = false) {
     state.galleries = data.galleries || [];
     state.galleryId = data.gallery.id;
     state.stageFolders = data.gallery.stages || [data.gallery];
-    state.ownerReadOnly = state.owner && data.gallery.photographer_picks !== 'yes';
+    state.ownerReadOnly = state.owner;
     document.body.dataset.ownerReadOnly = String(state.ownerReadOnly);
-    state.otherPicks = new Set((state.owner ? [...(data.selections?.client_saved || []), ...(data.selections?.client_sent || [])] : data.selections?.photographer_selected || []).map(file => file.id));
+    state.otherPicks = new Set((state.owner ? [...(data.selections?.client_saved || []), ...(data.selections?.client_sent || [])] : []).map(file => file.id));
     if (state.owner) {
       state.clientSent = data.selections?.client_sent || [];
       state.clientPicks = [...new Map([...(data.selections?.client_saved || []), ...(data.selections?.client_sent || [])].map(file => [file.id, file])).values()];
       $('#copy-photos-message').textContent = '';
       $('#copy-photos-fallback').hidden = true;
     }
-$('#other-picks-tab').hidden = !state.owner && data.gallery.photographer_picks !== 'yes';
-    $('#waiting-photographer').hidden = state.owner || data.gallery.photographer_picks !== 'yes';
-    $('#other-picks-tab').textContent = state.owner ? 'Client picks' : 'Photographer picks';
-    document.querySelector('[data-page="selected"]').textContent = state.owner ? 'My photographer picks' : 'My selected photos';
+    $('#other-picks-tab').hidden = !state.owner;
+    document.querySelector('[data-page="selected"]').hidden = state.owner;
     $('#change-gallery').textContent = state.owner ? 'Choose another client gallery' : 'Choose another gallery';
     tray.classList.remove("open");
     $("#tray-toggle").setAttribute("aria-expanded", "false");
@@ -699,7 +697,7 @@ $('#other-picks-tab').hidden = !state.owner && data.gallery.photographer_picks !
     updateTray();
     const isFinal = data.stage === "final_edits";
     $("#gallery-eyebrow").textContent = isFinal ? "Your finished gallery" : "Your proofs";
-    $("#gallery-title").textContent = state.ownerReadOnly ? "Browse photographs." : isFinal ? "Your final photographs." : state.owner ? "Choose your photographer picks." : "Choose your favorites.";
+    $("#gallery-title").textContent = state.ownerReadOnly ? "Browse photographs." : isFinal ? "Your final photographs." : "Choose your favorites.";
     $("#view-toggle").hidden = false;
     $("#gallery-count").textContent = `${data.count} photograph${data.count === 1 ? "" : "s"}`;
     $("#gallery-section").hidden = false;
@@ -820,9 +818,9 @@ function refreshGalleryPage() {
     card.querySelector('.select-button').hidden = state.page === 'other';
   });
   $('#gallery-empty').hidden = state.page === 'full' || [...gallery.children].some(card => !card.hidden);
-  $('#gallery-empty').textContent = state.page === 'other' ? (state.owner ? 'No client picks yet.' : 'Leanne has not selected photographer picks yet.') : 'No selected photos yet. Choose your favorites in the full gallery.';
+  $('#gallery-empty').textContent = state.page === 'other' ? 'No client picks yet.' : 'No selected photos yet. Choose your favorites in the full gallery.';
   $('#picks-description').hidden = state.page !== 'other';
-  $('#picks-description').textContent = state.owner ? 'Your client’s saved and sent selections. Your photographer picks are kept separately.' : 'Selected by Leanne. Your own selections are kept separately.';
+  $('#picks-description').textContent = 'Client saved and sent selections.';
   $('#bookmark-tools').hidden = state.owner || state.page !== 'full';
   document.querySelectorAll('[data-page]').forEach(button => button.setAttribute('aria-pressed', String(button.dataset.page === state.page)));
   if (state.page === 'selected' && $('#lightbox').open) {
@@ -909,14 +907,6 @@ new ResizeObserver(scheduleRuler).observe(gallery);
 function visibleOnPage(image) {
   return state.page === 'full' || (state.page === 'other' ? state.otherPicks.has(image.id) : isChosen(image));
 }
-$('#waiting-photographer').addEventListener('click', async () => {
-  if (state.busy) return;
-  await loadGallery(state.email, state.galleryId, true);
-  state.page = 'other';
-  filmstripImages = null;
-  refreshGalleryPage();
-  scrollToGallery();
-});
 async function showOwnerGalleries() {
   if (state.busy) return;
   const data = await readApiResponse(await fetch('/api/photographer/galleries'));
@@ -932,7 +922,7 @@ async function showOwnerGalleries() {
     const title = document.createElement('span'); title.className = 'choice-title';
     title.textContent = item.gallery;
     const detail = document.createElement('span'); detail.className = 'choice-date';
-    detail.textContent = `${item.email} · ${item.date}${item.photographer_picks === 'yes' ? '' : ' · Photographer picks disabled'}`;
+    detail.textContent = `${item.email} · ${item.date}`;
     button.append(title, detail);
     button.addEventListener('click', async () => {
       $('#owner-galleries').hidden = true;
@@ -946,7 +936,7 @@ function showOwnerError(error) {
   message($('#owner-message'), error.message, 'error');
   $('#owner-retry').hidden = false;
 }
-async function copySelectedPhotoNames(client, sentOnly = false) {
+async function copySelectedPhotoNames(sentOnly = false) {
   const status = $('#copy-photos-message');
   const fallback = $('#copy-photos-fallback');
   if (state.busy || state.loading) {
@@ -954,16 +944,16 @@ async function copySelectedPhotoNames(client, sentOnly = false) {
     return;
   }
   fallback.hidden = true;
-  const files = sentOnly ? state.clientSent : client ? state.clientPicks : [...state.selected.values()];
+  const files = sentOnly ? state.clientSent : state.clientPicks;
   const names = [...new Set(files.map(file => file.name))];
   if (!names.length) {
-    status.textContent = sentOnly ? 'No client sent filenames to copy.' : client ? 'No client selections to copy.' : 'No photographer selections to copy.';
+    status.textContent = sentOnly ? 'No client sent filenames to copy.' : 'No client selections to copy.';
     return;
   }
   const text = `[${names.join(', ')}]`;
   try {
     await navigator.clipboard.writeText(text);
-    status.textContent = `Copied ${names.length} ${sentOnly ? 'client sent' : client ? 'client' : 'photographer'} filenames. Ready to paste into the retrieval script.`;
+    status.textContent = `Copied ${names.length} ${sentOnly ? 'client sent' : 'client'} filenames. Ready to paste into the retrieval script.`;
   } catch {
     fallback.value = text;
     fallback.hidden = false;
@@ -973,9 +963,8 @@ async function copySelectedPhotoNames(client, sentOnly = false) {
   }
 }
 if (state.owner) {
-  $('#copy-client-photos').addEventListener('click', () => copySelectedPhotoNames(true));
-  $('#copy-client-sent').addEventListener('click', () => copySelectedPhotoNames(true, true));
-  $('#copy-my-photos').addEventListener('click', () => copySelectedPhotoNames(false));
+  $('#copy-client-photos').addEventListener('click', () => copySelectedPhotoNames());
+  $('#copy-client-sent').addEventListener('click', () => copySelectedPhotoNames(true));
   $('#intro').hidden = true;
   $('#owner-retry').addEventListener('click', () => showOwnerGalleries().catch(showOwnerError));
   showOwnerGalleries().catch(showOwnerError);

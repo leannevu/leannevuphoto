@@ -22,8 +22,6 @@ CREATE TABLE IF NOT EXISTS public.emails (
     saved jsonb NOT NULL DEFAULT '[]'::jsonb CHECK (jsonb_typeof(saved) = 'array'),
     sent jsonb NOT NULL DEFAULT '[]'::jsonb CHECK (jsonb_typeof(sent) = 'array'),
     bookmark jsonb,
-    photographer_picks text NOT NULL DEFAULT 'no' CHECK (photographer_picks IN ('yes', 'no')),
-    photographer_selected jsonb CHECK (photographer_selected IS NULL OR (photographer_picks = 'yes' AND jsonb_typeof(photographer_selected) = 'array')),
     created_at timestamptz NOT NULL DEFAULT now(),
     updated_at timestamptz NOT NULL DEFAULT now(),
     UNIQUE (email, folder_url)
@@ -77,11 +75,11 @@ def connection():
 def access_for_email(email):
     with connection() as conn:
         rows = conn.execute(
-            'SELECT folder_url, gallery, date, stage, process, saved, sent, photographer_picks FROM public.emails WHERE email = %s ORDER BY id',
+            'SELECT folder_url, gallery, date, stage, process, saved, sent FROM public.emails WHERE email = %s ORDER BY id',
             (email.strip().casefold(),),
         ).fetchall()
     return {row['folder_url']: dict(gallery=row['gallery'], date=row['date'].isoformat() if row['date'] else '',
-                                    stage=selection_stage(row['stage'], row['saved'], row['sent']), process=row['process'], photographer_picks=row['photographer_picks']) for row in rows} or None
+                                    stage=selection_stage(row['stage'], row['saved'], row['sent']), process=row['process']) for row in rows} or None
 
 
 def normalize_bookmark(value):
@@ -105,27 +103,13 @@ def normalize_bookmark(value):
 
 def photographer_galleries():
     with connection() as conn:
-        return conn.execute('SELECT email, folder_url, gallery, date, stage, process, photographer_picks FROM public.emails ORDER BY email, id').fetchall()
-
-
-@contextmanager
-def photographer_transaction(email, folder_url):
-    with connection() as conn:
-        conn.execute("SET LOCAL lock_timeout = '30s'")
-        row = conn.execute('SELECT id, photographer_picks, photographer_selected FROM public.emails WHERE email = %s AND folder_url = %s FOR UPDATE', (email, folder_url)).fetchone()
-        if not row or row['photographer_picks'] != 'yes':
-            raise ValueError('Photographer picks are not enabled for this gallery.')
-        state = {'saved': row['photographer_selected'] or [], 'sent': [], 'stage': 'choose_edits'}
-        yield state
-        if state['saved'] != (row['photographer_selected'] or []):
-            conn.execute('UPDATE public.emails SET photographer_selected = %s, updated_at = now() WHERE id = %s',
-                         (Jsonb(state['saved']) if state['saved'] else None, row['id']))
+        return conn.execute('SELECT email, folder_url, gallery, date, stage, process FROM public.emails ORDER BY email, id').fetchall()
 
 
 def read(email, folder_url):
     with connection() as conn:
         row = conn.execute(
-            'SELECT saved, sent, stage, bookmark, photographer_picks, photographer_selected FROM public.emails WHERE email = %s AND folder_url = %s',
+            'SELECT saved, sent, stage, bookmark FROM public.emails WHERE email = %s AND folder_url = %s',
             (email.strip().casefold(), folder_url),
         ).fetchone()
     if row is None:

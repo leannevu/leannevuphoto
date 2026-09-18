@@ -34,7 +34,7 @@ Selection notifications go to `leannevuphoto@gmail.com`. Photo names appear as
 `[name, name, name]` without individual photo links; the gallery folder link is retained.
 Client update emails include added and removed counts and lists, followed by the
 complete current sent list and its count. Previously sent photos are not counted
-as new additions. Photographer emails show the current photographer list and count.
+as new additions.
 
 ```powershell
 python -m venv .venv
@@ -65,7 +65,7 @@ address as Reply-To. Clients receive a separate branded HTML and plain-text
 confirmation with additions, removals, and the complete current selection; replies
 go to `leannevuphoto@gmail.com`. Both use `EMAIL_FROM` on your verified domain.
 Submitting additions or removing sent photos sends both messages through Resend's
-batch API. Saving drafts does not send email. Photographer picks email only Leanne.
+batch API. Saving drafts does not send email.
 Resend must return an email ID for each message before the selection change is
 saved. Acceptance does not guarantee inbox delivery; check
 Resend's email dashboard for delivery or bounce status. Requests time out after
@@ -83,9 +83,6 @@ Each row represents one email/folder pair and contains:
 - `email`, `gallery`, `date`, `folder_url`, `stage`, `process`
 - `saved` and `sent` JSONB arrays, each defaulting to `[]`
 - `bookmark` JSONB containing a photo reference or null (never TEXT)
-- `photographer_picks` is `yes` or `no` (default `no`)
-- `photographer_selected` is a separate JSONB photo list, or SQL NULL when empty;
-  it must be NULL when photographer picks are disabled
 - `id`, `created_at`, and `updated_at`
 
 An email can have multiple galleries. Use `google` or `nord` for `process` and
@@ -145,25 +142,18 @@ Entering `leannevuphoto@gmail.com` opens `/photographer`; other addresses open
 their assigned client galleries. No verification email or separate sign-in is
 required. This is email-based routing, not identity verification: anyone who
 enters the photographer address can access the workspace.
-The gallery list, activity page/API, photographer selections, and photographer
+The gallery list, activity page/API, and photographer
 mode on the gallery API require the resulting eight-hour session. Direct visits
 without that session return to the home-page email field. Resend is used only for
 selection emails. Keep `SECRET_KEY` persistent across server restarts.
 
-Leanne can select photos in enabled galleries, see a read-only **Client picks**
-tab (saved and sent), and **Email my photographer picks** to herself. Photographer
-picks save immediately and clients see them in a read-only **Photographer picks**
-tab, including while awaiting edits. Emailing these picks never changes the
-client's saved/sent lists, stage, or bookmark. Client email notifications continue
-as before. The cart shows photo previews and distinguishes drafts from sent picks.
-**Save position** stores a single reading position separately from photo selections.
+Leanne can browse galleries and view a read-only **Client picks** tab (saved
+and sent), and copy client selection filenames. Client selection emails and
+bookmarks continue as before.
 
-For existing databases, back up `public.emails`, then apply
-`docs/photographer_picks.sql` in a transaction before deploying this code. It adds
-only the two photographer columns and enables Socheata's two galleries; all
-other galleries default to `no`. No existing client columns are rewritten.
-The populated database was migrated with a private local backup and an exact
-comparison of every original row value before commit.
+For existing databases, apply `docs/remove_photographer_picks.sql` after deploying
+this code. It drops the two retired photographer columns without changing client
+saved/sent lists, stages, or bookmarks.
 
 The `data/` folder is not needed with PostgreSQL. Historical CSV import tools
 are kept locally under `.local/archive/`.
@@ -203,7 +193,7 @@ Run `python retrieve_selected_edits.py` with the project dependencies installed
 and `DATABASE_URL` configured in `.env` (use a database address reachable from
 your computer). Enter your local photo folder, choose a numbered gallery from
 the photographer workspace list, then choose client sent edits, saved drafts,
-all client picks, or photographer picks when enabled. Filenames come directly
+or all client picks. Filenames come directly
 from PostgreSQL; the script does not change database records.
 
 Matching originals are copied from your folder and its subfolders to

@@ -39,14 +39,6 @@ class SelectionEmailTests(unittest.TestCase):
         self.assertIn('Removed from your edit list (1)', client['text'])
         self.assertIn('No photos are currently selected', client['text'])
 
-    def test_photographer_picks_only_notify_owner(self):
-        self.post.return_value.json.return_value = {'id': 'owner'}
-        app.send_selection_email('client@example.com', 'https://example.com/folder', [self.photo], photographer=True)
-        payload = self.post.call_args.kwargs['json']
-        self.assertEqual(payload['to'], ['leannevuphoto@gmail.com'])
-        self.assertTrue(self.post.call_args.args[0].endswith('/emails'))
-        self.assertIn('Client selections are unchanged.', payload['text'])
-
     def test_incomplete_confirmation_fails(self):
         for result in ({'data': [{'id': 'owner'}]}, {'data': [{'id': 'owner'}, {}]}, None):
             with self.subTest(result=result):
